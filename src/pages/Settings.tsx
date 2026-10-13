@@ -1,0 +1,57 @@
+import { useEffect, useState } from "react";
+import { savedToast, send, setToken, useApi } from "../api";
+import { Card, Field, PageHeader } from "../components/ui";
+
+// Free-form profile facts; Claude reads all of them when planning.
+const FIELDS = [
+  { key: "goal", label: "Goal for this block", placeholder: "e.g. Get fit for the trip, climb 7a outdoors" },
+  { key: "trip_date", label: "Trip date", type: "date" },
+  { key: "trip_details", label: "Trip", placeholder: "Where, what style (sport, boulder, multipitch)" },
+  { key: "level", label: "Current level", placeholder: "e.g. boulder 6B+, lead 6c" },
+  { key: "weekly_availability", label: "When can you train?", placeholder: "e.g. Mon/Wed gym 2h, Sat outdoor, hangboard at home" },
+  { key: "gym_setup", label: "Equipment", placeholder: "e.g. Beastmaker 1000 at home, gym has a Moonboard" },
+];
+
+export default function Settings() {
+  const { data } = useApi<Record<string, string>>("/profile");
+  const [profile, setProfile] = useState<Record<string, string>>({});
+  useEffect(() => { if (data) setProfile(data); }, [data]);
+
+  async function save() {
+    const values = Object.fromEntries(FIELDS.map((f) => [f.key, profile[f.key]?.trim() || null]));
+    savedToast(await send("PUT", "/profile", values), "Profile saved");
+  }
+
+  function signOut() {
+    if (!confirm("Forget the app token on this phone?")) return;
+    setToken(null);
+    location.reload();
+  }
+
+  return (
+    <div className="page">
+      <PageHeader title="Profile & settings" back="#/more" />
+      <Card title="Profile" >
+        <p className="muted small">Claude reads this when planning and recommending.</p>
+        <div className="form">
+          {FIELDS.map((f) => (
+            <Field key={f.key} label={f.label}>
+              {f.type === "date" ? (
+                <input type="date" value={profile[f.key] ?? ""} onChange={(e) => setProfile({ ...profile, [f.key]: e.target.value })} />
+              ) : (
+                <textarea rows={2} value={profile[f.key] ?? ""} placeholder={f.placeholder} onChange={(e) => setProfile({ ...profile, [f.key]: e.target.value })} />
+              )}
+            </Field>
+          ))}
+          <button className="btn primary block" onClick={save}>Save profile</button>
+        </div>
+      </Card>
+      <Card title="Connect Claude">
+        <p className="small">Add a custom connector in Claude (Settings → Connectors) with this URL, using your MCP token:</p>
+        <code className="block-code">{location.origin}/mcp/&lt;MCP_TOKEN&gt;</code>
+        <p className="small">Then ask things like <em>"How should I train today?"</em> or <em>"How did my sleep and drinking affect my sessions this month?"</em></p>
+      </Card>
+      <button className="btn danger block" onClick={signOut}>Sign out of this phone</button>
+    </div>
+  );
+}

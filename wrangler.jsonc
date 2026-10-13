@@ -1,0 +1,30 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "climbing-app",
+	"main": "worker/index.ts",
+	"compatibility_date": "2026-09-01",
+	// Served at https://climbing-app.<your-subdomain>.workers.dev
+	"workers_dev": true,
+	"preview_urls": false,
+	"assets": {
+		"directory": "./dist",
+		"not_found_handling": "single-page-application",
+		// Only /api and /mcp hit the Worker; everything else is served as static files.
+		"run_worker_first": [
+			"/api/*",
+			"/mcp",
+			"/mcp/*"
+		]
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "climbing",
+			"database_id": "2292eea6-df4a-4522-b0a5-80fe46f3ab54",
+			"migrations_dir": "migrations"
+		}
+	]
+	// Secrets (set with `npx wrangler secret put <NAME>`, or .dev.vars locally):
+	//   APP_TOKEN - the phone app sends this as a bearer token
+	//   MCP_TOKEN - goes in the MCP URL you give to Claude
+}
