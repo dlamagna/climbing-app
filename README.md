@@ -51,6 +51,18 @@ Then ask, for example:
 - "How should I train today?" (Claude can save the answer as a coach note on the Today screen)
 - "How did drinking and sleep affect my sessions this month?"
 
+### Optional: file GitHub issues from Claude
+
+Adds `report_issue` and `list_issues` to the connector, so you can say *"log an idea: …"* from the Claude
+app. Create a [fine-grained token](https://github.com/settings/personal-access-tokens/new) limited to
+your repo with **Issues: Read and write** (nothing else), set `GITHUB_REPO` in `wrangler.jsonc`, then:
+
+```sh
+npx wrangler secret put GITHUB_TOKEN
+```
+
+Without the secret, the two tools are hidden.
+
 ## Your data stays private
 
 The code is public; the data isn't. Everything you log lives in your own D1 database in your own

@@ -13,6 +13,7 @@ import {
   updateProfile,
   upsertCheckin,
 } from "./db";
+import { ISSUE_LABELS, createIssue, githubEnabled, listIssues } from "./github";
 
 const SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
@@ -30,7 +31,11 @@ Load = duration_min * rpe. Check-in scales: sleep_quality 1-3, feeling 1-5 (5 = 
 drinks the day before, protein = rough low/ok/high for the day before.
 
 Use set_plan to write or rewrite the plan (one or more entries per date; existing entries on those dates are
-replaced). Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first).`;
+replaced). Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first).
+
+If report_issue is available, it files issues on the app's own GitHub repo: feature ideas and bugs about
+this app, never training notes or personal data (the repo is public). Call list_issues first to avoid
+duplicates, and write the issue so a developer can act on it.`;
 
 const dateSchema = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "YYYY-MM-DD" };
 const SESSION_TYPES = ["boulder", "board", "lead", "hangboard", "strength", "cardio", "mobility", "other"];
@@ -40,6 +45,7 @@ interface Tool {
   description: string;
   inputSchema: Record<string, unknown>;
   annotations?: Record<string, unknown>;
+  enabled?: (env: Env) => boolean; // hidden from tools/list when false
   run: (args: any, env: Env) => Promise<unknown>;
 }
 
@@ -227,7 +233,37 @@ const TOOLS: Tool[] = [
       return getProfile(env.DB);
     },
   },
+  {
+    name: "list_issues",
+    description: "List issues on the app's GitHub repo (roadmap, ideas, bugs). Use before report_issue to avoid duplicates.",
+    inputSchema: {
+      type: "object",
+      properties: { state: { type: "string", enum: ["open", "closed", "all"], default: "open" } },
+    },
+    annotations: { readOnlyHint: true, openWorldHint: true },
+    enabled: githubEnabled,
+    run: async (a, env) => listIssues(env, a.state ?? "open"),
+  },
+  {
+    name: "report_issue",
+    description:
+      "File a feature idea or bug about this app as an issue on its PUBLIC GitHub repo. Never include training data, health details or other personal information.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short and specific, e.g. 'Rest timer should vibrate on Android'" },
+        body: { type: "string", description: "Markdown: what and why, and where in the app if known" },
+        labels: { type: "array", items: { type: "string", enum: ISSUE_LABELS } },
+      },
+      required: ["title", "body"],
+    },
+    annotations: { openWorldHint: true },
+    enabled: githubEnabled,
+    run: async (a, env) => createIssue(env, a.title, a.body, a.labels),
+  },
 ];
+
+const tools = (env: Env) => TOOLS.filter((t) => !t.enabled || t.enabled(env));
 
 type JsonRpc = { jsonrpc: "2.0"; id?: string | number | null; method?: string; params?: any };
 
@@ -250,9 +286,9 @@ async function handleMessage(msg: JsonRpc, env: Env): Promise<object | null> {
     case "ping":
       return reply({});
     case "tools/list":
-      return reply({ tools: TOOLS.map(({ run: _run, ...t }) => t) });
+      return reply({ tools: tools(env).map(({ run: _run, enabled: _enabled, ...t }) => t) });
     case "tools/call": {
-      const tool = TOOLS.find((t) => t.name === msg.params?.name);
+      const tool = tools(env).find((t) => t.name === msg.params?.name);
       if (!tool) return fail(-32602, `Unknown tool: ${msg.params?.name}`);
       try {
         const result = await tool.run(msg.params?.arguments ?? {}, env);
