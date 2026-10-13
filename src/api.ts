@@ -28,12 +28,13 @@ export const setToken = (token: string | null) => save(TOKEN_KEY, token);
 
 export class AuthError extends Error {}
 
-async function request<T>(method: string, path: string, body?: unknown, token = getToken()): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, token = getToken(), key?: string): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${token ?? ""}`,
       ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+      ...(key ? { "Idempotency-Key": key } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -67,15 +68,19 @@ interface Pending {
   method: string;
   path: string;
   body?: unknown;
+  key?: string; // missing on writes queued before idempotency keys existed
 }
 
 // Writes made without signal (gym basements) are queued and replayed on the next chance.
+// The same idempotency key goes with every attempt, so if the first one reached the server but its
+// response was lost, the replay doesn't insert a second copy.
 export async function send<T = unknown>(method: string, path: string, body?: unknown): Promise<T | { queued: true }> {
+  const key = crypto.randomUUID();
   try {
-    return await request<T>(method, path, body);
+    return await request<T>(method, path, body, undefined, key);
   } catch (e) {
     if (!(e instanceof TypeError)) throw e;
-    save(OUTBOX_KEY, [...load<Pending[]>(OUTBOX_KEY, []), { method, path, body }]);
+    save(OUTBOX_KEY, [...load<Pending[]>(OUTBOX_KEY, []), { method, path, body, key }]);
     return { queued: true };
   }
 }
@@ -93,9 +98,9 @@ export async function flushOutbox(): Promise<number> {
   try {
     const queue = load<Pending[]>(OUTBOX_KEY, []);
     while (queue.length) {
-      const { method, path, body } = queue[0];
+      const { method, path, body, key } = queue[0];
       try {
-        await request(method, path, body);
+        await request(method, path, body, undefined, key);
       } catch (e) {
         if (e instanceof TypeError || e instanceof AuthError) break; // still offline / logged out: retry later
         // Server rejected it; drop it rather than blocking everything behind it.

@@ -101,15 +101,29 @@ export interface Session {
   notes?: string | null;
 }
 
-export async function insertSession(db: D1Database, s: Session): Promise<number> {
+// clientId makes the insert idempotent: replaying the same write returns the original row's id.
+export async function insertSession(db: D1Database, s: Session, clientId: string | null = null): Promise<number> {
   const row = await db
     .prepare(
-      `INSERT INTO sessions (date, type, duration_min, rpe, max_grade, notes)
-       VALUES (?, ?, ?, ?, ?, ?) RETURNING id`,
+      `INSERT INTO sessions (date, type, duration_min, rpe, max_grade, notes, client_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
     )
-    .bind(s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null)
+    .bind(s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null, clientId)
     .first<{ id: number }>();
+  return row?.id ?? (await idForClientId(db, "sessions", clientId!));
+}
+
+export async function idForClientId(db: D1Database, table: "sessions" | "hang_logs", clientId: string): Promise<number> {
+  const row = await db.prepare(`SELECT id FROM ${table} WHERE client_id = ?`).bind(clientId).first<{ id: number }>();
   return row!.id;
+}
+
+export async function updateSession(db: D1Database, id: number, s: Session): Promise<boolean> {
+  const { meta } = await db
+    .prepare("UPDATE sessions SET date = ?, type = ?, duration_min = ?, rpe = ?, max_grade = ?, notes = ? WHERE id = ?")
+    .bind(s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null, id)
+    .run();
+  return meta.changes > 0;
 }
 
 export interface PlanEntry {

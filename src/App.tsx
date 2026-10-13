@@ -31,19 +31,20 @@ const TABS = [
 ];
 const MORE_ROUTES = ["more", "plan", "injuries", "benchmarks", "settings"];
 
-const currentRoute = () => location.hash.replace(/^#\/?/, "").split("?")[0] || "today";
+const currentPath = () => location.hash.replace(/^#\/?/, "");
 
-function useRoute() {
-  const [route, setRoute] = useState(currentRoute);
+// Returns the full path including query, so e.g. #/log?edit=5 -> #/log remounts the page.
+function usePath() {
+  const [path, setPath] = useState(currentPath);
   useEffect(() => {
     const onChange = () => {
-      setRoute(currentRoute());
+      setPath(currentPath());
       window.scrollTo(0, 0);
     };
     window.addEventListener("hashchange", onChange);
     return () => window.removeEventListener("hashchange", onChange);
   }, []);
-  return route;
+  return path;
 }
 
 // Replays queued offline writes and keeps the server's idea of "today" in the phone's timezone.
@@ -61,7 +62,8 @@ async function sync() {
 
 export default function App() {
   const [authed, setAuthed] = useState(() => Boolean(getToken()));
-  const route = useRoute();
+  const path = usePath();
+  const route = path.split("?")[0] || "today";
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -95,7 +97,7 @@ export default function App() {
 
   return (
     <>
-      <main key={route}>
+      <main key={path}>
         <Page />
       </main>
       {pendingCount() > 0 && <div className="pending">{pendingCount()} unsynced</div>}
