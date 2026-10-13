@@ -9,11 +9,14 @@
 	"assets": {
 		"directory": "./dist",
 		"not_found_handling": "single-page-application",
-		// Only /api and /mcp hit the Worker; everything else is served as static files.
+		// Only these hit the Worker; everything else is served as static files.
+		// /.well-known goes to the Worker so OAuth discovery gets a 404 (the MCP server is token-in-URL,
+		// no OAuth) instead of the SPA's index.html.
 		"run_worker_first": [
 			"/api/*",
 			"/mcp",
-			"/mcp/*"
+			"/mcp/*",
+			"/.well-known/*"
 		]
 	},
 	"d1_databases": [
