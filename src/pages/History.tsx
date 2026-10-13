@@ -21,7 +21,7 @@ export default function History() {
 
   return (
     <div className="page">
-      <PageHeader title="History" sub="Last 8 weeks" />
+      <PageHeader title="History" sub="Last 8 weeks · tap a session to edit" />
       <Card title="Weekly training load">
         <LoadChart weeks={data.load.weeks} />
       </Card>
@@ -44,12 +44,12 @@ export default function History() {
             )}
             {sessions.map((s) => (
               <div key={s.id} className="entry">
-                <div>
+                <a className="entry-link" href={`#/log?edit=${s.id}`} aria-label={`Edit ${typeLabel(s.type)} session`}>
                   <strong>{typeLabel(s.type)}</strong> {s.duration_min} min · effort {s.rpe}
                   {s.max_grade && ` · ${s.max_grade}`}
                   <span className="muted"> · load {s.duration_min * s.rpe}</span>
                   {s.notes && <div className="muted small prewrap">{s.notes}</div>}
-                </div>
+                </a>
                 <button className="icon-btn" aria-label="Delete session" onClick={() => remove("sessions", s.id)}>
                   ×
                 </button>

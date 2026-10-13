@@ -6,11 +6,13 @@ import {
   getPlan,
   getProfile,
   history,
+  idForClientId,
   insertSession,
   loadStats,
   setPlan,
   todayView,
   updateProfile,
+  updateSession,
   upsertCheckin,
 } from "./db";
 import { handleMcp } from "./mcp";
@@ -40,6 +42,17 @@ function dateParam(c: C, name: string): string {
 }
 
 class BadRequest extends Error {}
+
+// Sent by the app's outbox so a replayed insert (response lost on bad signal) isn't stored twice.
+const clientId = (c: C) => c.req.header("Idempotency-Key") || null;
+
+async function sessionBody(c: C) {
+  const s = await c.req.json();
+  if (!isDate(s.date) || !s.type || !(s.duration_min > 0) || !(s.rpe >= 1 && s.rpe <= 10)) {
+    throw new BadRequest("date, type, duration_min and rpe (1-10) are required");
+  }
+  return s;
+}
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -78,12 +91,16 @@ api.put("/checkins/:date", async (c) => {
   return c.json({ ok: true });
 });
 
-api.post("/sessions", async (c) => {
-  const s = await c.req.json();
-  if (!isDate(s.date) || !s.type || !(s.duration_min > 0) || !(s.rpe >= 1 && s.rpe <= 10)) {
-    throw new BadRequest("date, type, duration_min and rpe (1-10) are required");
-  }
-  return c.json({ id: await insertSession(c.env.DB, s) });
+api.post("/sessions", async (c) => c.json({ id: await insertSession(c.env.DB, await sessionBody(c), clientId(c)) }));
+
+api.get("/sessions/:id", async (c) => {
+  const row = await c.env.DB.prepare("SELECT * FROM sessions WHERE id = ?").bind(Number(c.req.param("id"))).first();
+  return row ? c.json(row) : c.json({ error: "Session not found" }, 404);
+});
+
+api.put("/sessions/:id", async (c) => {
+  const found = await updateSession(c.env.DB, Number(c.req.param("id")), await sessionBody(c));
+  return found ? c.json({ ok: true }) : c.json({ error: "Session not found" }, 404);
 });
 
 api.delete("/sessions/:id", async (c) => {
@@ -94,16 +111,17 @@ api.delete("/sessions/:id", async (c) => {
 api.post("/hangs", async (c) => {
   const h = await c.req.json();
   if (!isDate(h.date)) throw new BadRequest("date is required");
+  const key = clientId(c);
   const row = await c.env.DB.prepare(
-    `INSERT INTO hang_logs (date, preset, on_s, off_s, reps, sets, set_rest_s, completed_reps, edge_mm, grip, added_kg, notes)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
+    `INSERT INTO hang_logs (date, preset, on_s, off_s, reps, sets, set_rest_s, completed_reps, edge_mm, grip, added_kg, notes, client_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
   )
     .bind(
       h.date, h.preset, h.on_s, h.off_s, h.reps, h.sets, h.set_rest_s, h.completed_reps,
-      h.edge_mm ?? null, h.grip ?? null, h.added_kg ?? null, h.notes ?? null,
+      h.edge_mm ?? null, h.grip ?? null, h.added_kg ?? null, h.notes ?? null, key,
     )
     .first<{ id: number }>();
-  return c.json({ id: row!.id });
+  return c.json({ id: row?.id ?? (await idForClientId(c.env.DB, "hang_logs", key!)) });
 });
 
 api.delete("/hangs/:id", async (c) => {

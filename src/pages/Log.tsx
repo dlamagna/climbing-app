@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { savedToast, send } from "../api";
+import { savedToast, send, useApi } from "../api";
 import { Chips, Field, PageHeader, Stepper, range } from "../components/ui";
 import { addDays, localToday, prettyDate } from "../dates";
-import { SESSION_TYPES } from "../types";
+import { SESSION_TYPES, type Session } from "../types";
 
 export const EFFORT_HINT: Record<number, string> = {
   1: "barely anything",
@@ -19,30 +19,55 @@ export function effortHint(rpe: number | null) {
   return EFFORT_HINT[keys.filter((k) => k <= rpe).pop()!];
 }
 
+// #/log?edit=<id> opens an existing session (tapped in History) prefilled.
 export default function Log() {
+  const editId = new URLSearchParams(location.hash.split("?")[1]).get("edit");
+  const { data, error } = useApi<Session>(editId ? `/sessions/${editId}` : null);
+
+  if (editId && !data) {
+    return (
+      <div className="page">
+        <PageHeader title="Edit session" back="#/history" />
+        {error ? <p className="error">{error}</p> : <p className="muted">Loading…</p>}
+      </div>
+    );
+  }
+  return <SessionForm session={data} />;
+}
+
+function SessionForm({ session }: { session: Session | null }) {
   const today = localToday();
-  const [date, setDate] = useState(today);
-  const [type, setType] = useState<string | null>(null);
-  const [duration, setDuration] = useState(90);
-  const [rpe, setRpe] = useState<number | null>(null);
-  const [grade, setGrade] = useState("");
-  const [notes, setNotes] = useState("");
+  const [date, setDate] = useState(session?.date ?? today);
+  const [type, setType] = useState<string | null>(session?.type ?? null);
+  const [duration, setDuration] = useState(session?.duration_min ?? 90);
+  const [rpe, setRpe] = useState<number | null>(session?.rpe ?? null);
+  const [grade, setGrade] = useState(session?.max_grade ?? "");
+  const [notes, setNotes] = useState(session?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const ready = type !== null && rpe !== null;
+
+  const dates = [today, addDays(today, -1), addDays(today, -2)];
+  if (!dates.includes(date)) dates.push(date); // an older session being edited
+  const dateLabel = (d: string) => (d === today ? "Today" : d === addDays(today, -1) ? "Yesterday" : prettyDate(d));
 
   async function submit() {
     setBusy(true);
     try {
-      const r = await send("POST", "/sessions", {
+      const body = {
         date,
         type,
         duration_min: duration,
         rpe,
         max_grade: grade.trim() || null,
         notes: notes.trim() || null,
-      });
-      savedToast(r, "Session logged");
-      location.hash = "#/today";
+      };
+      if (session) {
+        savedToast(await send("PUT", `/sessions/${session.id}`, body), "Session updated");
+        location.hash = "#/history";
+      } else {
+        savedToast(await send("POST", "/sessions", body), "Session logged");
+        location.hash = "#/today";
+      }
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -52,15 +77,11 @@ export default function Log() {
 
   return (
     <div className="page">
-      <PageHeader title="Log session" />
+      {session ? <PageHeader title="Edit session" back="#/history" /> : <PageHeader title="Log session" />}
       <div className="form">
         <Field label="When">
           <Chips
-            options={[
-              { value: today, label: "Today" },
-              { value: addDays(today, -1), label: "Yesterday" },
-              { value: addDays(today, -2), label: prettyDate(addDays(today, -2)) },
-            ]}
+            options={dates.map((d) => ({ value: d, label: dateLabel(d) }))}
             value={date}
             onChange={(v) => v && setDate(v)}
           />
