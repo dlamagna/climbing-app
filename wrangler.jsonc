@@ -19,6 +19,10 @@
 			"/.well-known/*"
 		]
 	},
+	"vars": {
+		// Repo the optional report_issue / list_issues MCP tools write to (needs the GITHUB_TOKEN secret).
+		"GITHUB_REPO": "dlamagna/climbing-app"
+	},
 	"d1_databases": [
 		{
 			"binding": "DB",
@@ -30,4 +34,5 @@
 	// Secrets (set with `npx wrangler secret put <NAME>`, or .dev.vars locally):
 	//   APP_TOKEN - the phone app sends this as a bearer token
 	//   MCP_TOKEN - goes in the MCP URL you give to Claude
+	//   GITHUB_TOKEN - optional; fine-grained token for GITHUB_REPO with Issues: read & write
 }

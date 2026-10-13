@@ -5,6 +5,8 @@ export interface Env {
   ASSETS: Fetcher;
   APP_TOKEN?: string;
   MCP_TOKEN?: string;
+  GITHUB_TOKEN?: string; // optional, enables the issue tools (see worker/github.ts)
+  GITHUB_REPO?: string; // "owner/repo"
 }
 
 type Row = Record<string, unknown>;
