@@ -85,6 +85,10 @@ Finger load (boulder, board, lead, hangboard) is tracked separately.
 
 Offline: the app shell and the timer work without signal; writes made offline are queued and sync later.
 
+## Roadmap
+
+See the pinned [Roadmap issue](https://github.com/dlamagna/climbing-app/issues/14).
+
 ## Licence
 
 MIT, see [LICENSE](LICENSE).
