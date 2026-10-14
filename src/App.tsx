@@ -1,6 +1,7 @@
 import { type ComponentType, useEffect, useState } from "react";
 import { checkToken, flushOutbox, get, getToken, pendingCount, send, setToken, toast } from "./api";
 import Benchmarks from "./pages/Benchmarks";
+import CheckinEdit from "./pages/CheckinEdit";
 import History from "./pages/History";
 import Injuries from "./pages/Injuries";
 import Log from "./pages/Log";
@@ -13,6 +14,7 @@ import Today from "./pages/Today";
 const ROUTES: Record<string, ComponentType> = {
   today: Today,
   log: Log,
+  checkin: CheckinEdit,
   timer: Timer,
   history: History,
   more: More,
@@ -93,7 +95,7 @@ export default function App() {
   if (!authed) return <TokenScreen onDone={() => setAuthed(true)} />;
 
   const Page = ROUTES[route] ?? Today;
-  const activeTab = MORE_ROUTES.includes(route) ? "more" : route;
+  const activeTab = MORE_ROUTES.includes(route) ? "more" : route === "checkin" ? "history" : route;
 
   return (
     <>

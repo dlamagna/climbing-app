@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
+import { addDays, localToday, prettyDate } from "../dates";
 
 export interface Option<T> {
   value: T;
@@ -123,4 +124,87 @@ export function seconds(s: number): string {
   const m = Math.floor(s / 60);
   const r = s % 60;
   return r ? `${m}m ${r}s` : `${m}m`;
+}
+
+// Today / yesterday / two days ago as chips (the usual case), plus a calendar for anything older.
+// Future dates are not offered: these are logs of things that already happened.
+export function DatePicker({ value, onChange }: { value: string; onChange: (date: string) => void }) {
+  const today = localToday();
+  const quick = [today, addDays(today, -1), addDays(today, -2)];
+  const [picking, setPicking] = useState(!quick.includes(value));
+  const label = (d: string) => (d === today ? "Today" : d === quick[1] ? "Yesterday" : prettyDate(d));
+  return (
+    <div className="form-tight">
+      <Chips
+        wrap
+        options={[
+          ...quick.map((d) => ({ value: d, label: label(d) })),
+          { value: "pick", label: picking && !quick.includes(value) ? prettyDate(value) : "Other…" },
+        ]}
+        value={picking ? "pick" : value}
+        onChange={(v) => {
+          if (v === "pick") setPicking(true);
+          else if (v) {
+            setPicking(false);
+            onChange(v);
+          }
+        }}
+      />
+      {picking && (
+        <input type="date" aria-label="Date" max={today} value={value} onChange={(e) => e.target.value && onChange(e.target.value)} />
+      )}
+    </div>
+  );
+}
+
+export interface MenuItem {
+  label: string;
+  onSelect: () => void;
+  danger?: boolean;
+}
+
+// Three-dot overflow menu for a list row. Closes on outside tap or Escape.
+export function OverflowMenu({ label, items }: { label: string; items: MenuItem[] }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setOpen(false);
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  return (
+    <div className="overflow" ref={ref}>
+      <button type="button" className="icon-btn more-btn" aria-label={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        ⋯
+      </button>
+      {open && (
+        <div className="overflow-menu" role="menu">
+          {items.map((it) => (
+            <button
+              key={it.label}
+              type="button"
+              role="menuitem"
+              className={it.danger ? "danger" : ""}
+              onClick={() => {
+                setOpen(false);
+                it.onSelect();
+              }}
+            >
+              {it.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
