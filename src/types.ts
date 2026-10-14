@@ -50,6 +50,18 @@ export interface Preset {
   sort?: number;
 }
 
+export type Trend = "better" | "same" | "worse" | "gone";
+export type RedFlag = "swelling" | "numbness" | "night_pain";
+
+export interface InjuryUpdate {
+  date: string;
+  pain: number;
+  trend: Trend | null;
+  stiffness: number | null;
+  red_flags: string | null; // comma-separated RedFlag values
+  note: string | null;
+}
+
 export interface Injury {
   id: number;
   body_part: string;
@@ -57,7 +69,10 @@ export interface Injury {
   description: string | null;
   started_on: string;
   resolved_on: string | null;
-  updates?: { date: string; pain: number; note: string | null }[];
+  session_id?: number | null;
+  session_type?: string | null;
+  session_date?: string | null;
+  updates?: InjuryUpdate[]; // newest first
 }
 
 export interface PlanEntry {

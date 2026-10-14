@@ -37,6 +37,36 @@ export function Chips<T extends string | number>({
   );
 }
 
+// Like Chips, but any number of options can be on.
+export function MultiChips<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: Option<T>[];
+  value: T[];
+  onChange: (v: T[]) => void;
+}) {
+  return (
+    <div className="chips wrap" role="group">
+      {options.map((o) => {
+        const on = value.includes(o.value);
+        return (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={on}
+            className={on ? "chip on" : "chip"}
+            onClick={() => onChange(on ? value.filter((v) => v !== o.value) : [...value, o.value])}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Stepper({
   value,
   onChange,

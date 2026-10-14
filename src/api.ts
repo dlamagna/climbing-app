@@ -141,8 +141,18 @@ export function useApi<T>(path: string | null) {
   return { data, error, loading, reload, setData };
 }
 
-export function toast(message: string) {
-  window.dispatchEvent(new CustomEvent("climb:toast", { detail: message }));
+export interface ToastAction {
+  label: string;
+  run: () => void;
+}
+
+export interface ToastMessage {
+  message: string;
+  action?: ToastAction;
+}
+
+export function toast(message: string, action?: ToastAction) {
+  window.dispatchEvent(new CustomEvent<ToastMessage>("climb:toast", { detail: { message, action } }));
 }
 
 // Shows the right toast for a write that may have been queued.

@@ -1,5 +1,17 @@
 import { useState } from "react";
-import { savedToast, send, useApi } from "../api";
+import { isQueued, savedToast, send, toast, useApi } from "../api";
+import {
+  type FollowUp,
+  type InjuryDraft,
+  EMPTY_DRAFT,
+  FollowUpRow,
+  QuickInjury,
+  draftBody,
+  initialFollowUp,
+  injuryName,
+  redFlagLabels,
+  trendLabel,
+} from "../components/injury";
 import { Card, Chips, Field, Stepper, range } from "../components/ui";
 import { dayLabel, localToday, prettyDate } from "../dates";
 import { type Checkin, type Injury, type LoadStats, type PlanEntry, type TodayView, typeLabel } from "../types";
@@ -24,19 +36,30 @@ export default function Today() {
         <h1>{prettyDate(today)}</h1>
       </header>
 
-      {data.injuries.length > 0 && <InjuryPain injuries={data.injuries} today={today} onSaved={reload} />}
-
       {data.checkin && !editing ? (
-        <CheckinSummary checkin={data.checkin} onEdit={() => setEditing(true)} />
+        <CheckinSummary checkin={data.checkin} injuries={data.injuries} today={today} onEdit={() => setEditing(true)} />
       ) : (
         <Card title="Morning check-in" tone="accent">
           <CheckinForm
             date={today}
             initial={data.checkin}
             defaults={data.last_checkin}
-            onSaved={(c) => {
-              setData({ ...data, checkin: c });
+            injuries={data.injuries}
+            onSaved={(c, followUps, queued) => {
+              // Shown straight away (also covers a queued offline save); a reload then picks up new injuries.
+              setData({ ...data, checkin: c, injuries: applyFollowUps(data.injuries, today, followUps) });
               setEditing(false);
+              if (!queued) reload();
+              const gone = data.injuries.filter((i) => followUps.some((f) => f.injury_id === i.id && f.trend === "gone"));
+              if (gone.length) {
+                toast(`${gone.map(injuryName).join(", ")} marked healed${queued ? " (offline)" : ""}`, {
+                  label: "Undo",
+                  run: async () => {
+                    for (const inj of gone) await send("POST", `/injuries/${inj.id}/reopen`, { undo_date: today });
+                    reload();
+                  },
+                });
+              }
             }}
           />
         </Card>
@@ -104,7 +127,35 @@ export function PlanItem({ entry }: { entry: PlanEntry }) {
   );
 }
 
-function CheckinSummary({ checkin: c, onEdit }: { checkin: Checkin; onEdit: () => void }) {
+// Applies the check-in's follow-ups locally: today's update replaces any earlier one, "gone" drops the injury.
+function applyFollowUps(injuries: Injury[], date: string, followUps: FollowUp[]): Injury[] {
+  return injuries.flatMap((inj) => {
+    const f = followUps.find((u) => u.injury_id === inj.id);
+    if (!f) return [inj];
+    if (f.trend === "gone") return [];
+    const update = {
+      date,
+      pain: f.pain!,
+      trend: f.trend,
+      stiffness: f.stiffness,
+      red_flags: f.red_flags.join(",") || null,
+      note: null,
+    };
+    return [{ ...inj, updates: [update, ...(inj.updates ?? []).filter((u) => u.date !== date)] }];
+  });
+}
+
+function CheckinSummary({
+  checkin: c,
+  injuries,
+  today,
+  onEdit,
+}: {
+  checkin: Checkin;
+  injuries: Injury[];
+  today: string;
+  onEdit: () => void;
+}) {
   return (
     <Card
       title="Check-in done"
@@ -120,6 +171,27 @@ function CheckinSummary({ checkin: c, onEdit }: { checkin: Checkin; onEdit: () =
         <Stat label="Drinks" value={c.drinks === null ? "?" : c.drinks >= 5 ? "5+" : String(c.drinks)} sub="yesterday" />
         <Stat label="Protein" value={c.protein ?? "?"} sub="yesterday" />
       </div>
+      {injuries.length > 0 && (
+        <ul className="mini-list">
+          {injuries.map((inj) => {
+            const u = inj.updates?.find((u) => u.date === today);
+            const flags = redFlagLabels(u?.red_flags ?? null);
+            return (
+              <li key={inj.id}>
+                {injuryName(inj)}:{" "}
+                {u ? (
+                  <>
+                    {[trendLabel(u.trend), `pain ${u.pain}`, u.stiffness ? "stiff" : ""].filter(Boolean).join(" · ")}
+                    {flags.length > 0 && <span className="warn"> · {flags.join(", ")}</span>}
+                  </>
+                ) : (
+                  <span className="muted">not checked today</span>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </Card>
   );
 }
@@ -138,12 +210,14 @@ function CheckinForm({
   date,
   initial,
   defaults,
+  injuries,
   onSaved,
 }: {
   date: string;
   initial: Checkin | null;
   defaults: Checkin | null;
-  onSaved: (c: Checkin) => void;
+  injuries: Injury[];
+  onSaved: (c: Checkin, followUps: FollowUp[], queued: boolean) => void;
 }) {
   // Prefill the "boring" fields so a normal day is three taps: sleep quality, feeling, save.
   const [c, setC] = useState<Checkin>(
@@ -159,15 +233,27 @@ function CheckinForm({
     },
   );
   const [more, setMore] = useState(Boolean(initial?.weight_kg || initial?.note));
+  const [followUps, setFollowUps] = useState<Record<number, FollowUp>>(() =>
+    Object.fromEntries(injuries.map((inj) => [inj.id, initialFollowUp(inj, date)])),
+  );
+  const [draft, setDraft] = useState<InjuryDraft | null>(null);
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof Checkin>(k: K, v: Checkin[K]) => setC((prev) => ({ ...prev, [k]: v }));
-  const ready = c.sleep_quality !== null && c.feeling !== null;
+  const touched = Object.values(followUps).filter((f) => f.touched);
+  const unrated = injuries.find((inj) => touched.some((f) => f.injury_id === inj.id && f.pain === null));
+  const ready = c.sleep_quality !== null && c.feeling !== null && !unrated && (!draft || draft.part !== null);
 
   async function submit() {
     setBusy(true);
     try {
-      savedToast(await send("PUT", `/checkins/${date}`, c), "Check-in saved");
-      onSaved(c);
+      const body = {
+        ...c,
+        injuries: touched.map(({ injury_id, trend, pain, stiffness, red_flags }) => ({ injury_id, trend, pain, stiffness, red_flags })),
+        new_injuries: draft ? [draftBody(draft)] : [],
+      };
+      const result = await send("PUT", `/checkins/${date}`, body);
+      savedToast(result, "Check-in saved");
+      onSaved(c, touched, isQueued(result));
     } catch (e) {
       alert((e as Error).message);
     } finally {
@@ -208,6 +294,15 @@ function CheckinForm({
           onChange={(v) => set("protein", v)}
         />
       </Field>
+      {injuries.map((inj) => (
+        <FollowUpRow
+          key={inj.id}
+          injury={inj}
+          date={date}
+          value={followUps[inj.id] ?? initialFollowUp(inj, date)}
+          onChange={(f) => setFollowUps((prev) => ({ ...prev, [inj.id]: f }))}
+        />
+      ))}
       {more ? (
         <>
           <Field label="Weight (kg)" hint="optional">
@@ -228,35 +323,23 @@ function CheckinForm({
           + weight / note
         </button>
       )}
+      {draft ? (
+        <QuickInjury draft={draft} onChange={setDraft} onRemove={() => setDraft(null)} />
+      ) : (
+        <button type="button" className="link" onClick={() => setDraft(EMPTY_DRAFT)}>
+          + new injury
+        </button>
+      )}
       <button className="btn primary block" disabled={!ready || busy} onClick={submit}>
-        {ready ? "Save" : "Pick sleep quality and feeling"}
+        {ready
+          ? "Save"
+          : c.sleep_quality === null || c.feeling === null
+            ? "Pick sleep quality and feeling"
+            : unrated
+              ? `Pick a pain score for ${injuryName(unrated)}`
+              : "Pick where the new injury is"}
       </button>
     </div>
-  );
-}
-
-function InjuryPain({ injuries, today, onSaved }: { injuries: Injury[]; today: string; onSaved: () => void }) {
-  async function rate(id: number, pain: number | null) {
-    if (pain === null) return;
-    savedToast(await send("POST", `/injuries/${id}/updates`, { date: today, pain }));
-    onSaved();
-  }
-  return (
-    <Card title="Injury check" tone="warn">
-      {injuries.map((inj) => {
-        const todays = inj.updates?.find((u) => u.date === today);
-        const last = inj.updates?.find((u) => u.date !== today);
-        return (
-          <Field
-            key={inj.id}
-            label={`${inj.body_part}${inj.side ? ` (${inj.side})` : ""} - pain today`}
-            hint={last ? `last: ${last.pain} on ${dayLabel(last.date, today)}` : undefined}
-          >
-            <Chips wrap options={range(0, 10).map((v) => ({ value: v, label: String(v) }))} value={todays?.pain} onChange={(v) => rate(inj.id, v)} />
-          </Field>
-        );
-      })}
-    </Card>
   );
 }
 

@@ -637,10 +637,22 @@ button {
   background: var(--text);
   color: var(--bg);
   padding: 10px 16px;
-  border-radius: 999px;
+  border-radius: 18px;
   font-size: 14px;
   font-weight: 600;
+  width: max-content;
   max-width: calc(100vw - 32px);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.toast-action {
+  border: 0;
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-weight: 700;
+  text-decoration: underline;
 }
 .pending {
   position: fixed;
@@ -652,4 +664,32 @@ button {
   border-radius: 999px;
   background: var(--warn);
   color: #1a1200;
+}
+
+/* Injury follow-up rows in the check-in, and the quick-add injury form */
+.injury-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.sub-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--warn);
+  border-radius: 10px;
+}
+.sub-form-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
 }
