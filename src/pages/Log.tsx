@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { savedToast, send, useApi } from "../api";
+import { type InjuryDraft, EMPTY_DRAFT, QuickInjury, draftBody } from "../components/injury";
 import { Chips, DatePicker, Field, PageHeader, Stepper, range } from "../components/ui";
 import { localToday } from "../dates";
 import { SESSION_TYPES, type Session } from "../types";
@@ -42,8 +43,10 @@ function SessionForm({ session }: { session: Session | null }) {
   const [rpe, setRpe] = useState<number | null>(session?.rpe ?? null);
   const [grade, setGrade] = useState(session?.max_grade ?? "");
   const [notes, setNotes] = useState(session?.notes ?? "");
+  const [injury, setInjury] = useState<InjuryDraft | null>(null);
+  const [linked, setLinked] = useState(true);
   const [busy, setBusy] = useState(false);
-  const ready = type !== null && rpe !== null;
+  const ready = type !== null && rpe !== null && (!injury || injury.part !== null);
 
   async function submit() {
     setBusy(true);
@@ -55,12 +58,13 @@ function SessionForm({ session }: { session: Session | null }) {
         rpe,
         max_grade: grade.trim() || null,
         notes: notes.trim() || null,
+        new_injury: injury && { ...draftBody(injury), link: linked },
       };
       if (session) {
         savedToast(await send("PUT", `/sessions/${session.id}`, body), "Session updated");
         location.hash = "#/history";
       } else {
-        savedToast(await send("POST", "/sessions", body), "Session logged");
+        savedToast(await send("POST", "/sessions", body), injury ? "Session and injury logged" : "Session logged");
         location.hash = "#/today";
       }
     } catch (e) {
@@ -95,8 +99,26 @@ function SessionForm({ session }: { session: Session | null }) {
         <Field label="Notes" hint="optional">
           <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What you worked on, how fingers felt…" />
         </Field>
+        {injury ? (
+          <QuickInjury draft={injury} onChange={setInjury} onRemove={() => setInjury(null)}>
+            <Field label="Happened in this session?">
+              <Chips
+                options={[
+                  { value: "yes", label: "Yes" },
+                  { value: "no", label: "No, just noticed it" },
+                ]}
+                value={linked ? "yes" : "no"}
+                onChange={(v) => v && setLinked(v === "yes")}
+              />
+            </Field>
+          </QuickInjury>
+        ) : (
+          <button type="button" className="link" onClick={() => setInjury(EMPTY_DRAFT)}>
+            + new injury
+          </button>
+        )}
         <button className="btn primary block" disabled={!ready || busy} onClick={submit}>
-          {ready ? "Save" : "Pick what and how hard"}
+          {ready ? "Save" : type === null || rpe === null ? "Pick what and how hard" : "Pick where the injury is"}
         </button>
       </div>
     </div>

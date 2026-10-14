@@ -27,6 +27,15 @@ more than a single value), last night's sleep and how they feel, alcohol in the 
 hard days, and what the plan says for today. Give a concrete session (warm-up, main block with sets/grades/
 times, what to avoid), not general advice. Then offer to save it with add_coach_note so it appears in the app.
 
+Injuries: the morning check-in records, per active injury, pain 0-10, trend vs the day before (better/same/
+worse/gone), morning stiffness and red flags (swelling, numbness, night_pain). Each update carries
+load_day_before / finger_load_day_before: infer from these whether the previous day's session aggravated it
+(e.g. "worse" after a hard finger day) and adjust; don't ask the climber. An injury's session_* fields are the
+session it was logged from, if any. Keep injury guidance to training-plan changes: unload or avoid the affected
+area, substitute exercises, cap intensity. No medical-referral advice. Any red flag: fully unload the affected
+area until no red flags have been reported for a few days. Recently resolved (trend "gone"): taper back to full
+intensity over several sessions rather than jumping straight back.
+
 Load = duration_min * rpe. Check-in scales: sleep_quality 1-3, feeling 1-5 (5 = fresh), drinks = alcoholic
 drinks the day before, protein = rough low/ok/high for the day before.
 
@@ -69,7 +78,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_overview",
     description:
-      "Everything needed to recommend today's training: profile/goals, active injuries with pain history, training load stats, recent check-ins (sleep, feeling, alcohol, protein), sessions, hangboard logs, plan for the past N days and next 7, recent coach notes and benchmarks.",
+      "Everything needed to recommend today's training: profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats, recent check-ins (sleep, feeling, alcohol, protein), sessions, hangboard logs, plan for the past N days and next 7, recent coach notes and benchmarks.",
     inputSchema: {
       type: "object",
       properties: {

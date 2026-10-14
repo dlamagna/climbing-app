@@ -120,7 +120,7 @@ export async function insertSession(db: D1Database, s: Session, clientId: string
   return row?.id ?? (await idForClientId(db, "sessions", clientId!));
 }
 
-export async function idForClientId(db: D1Database, table: "sessions" | "hang_logs", clientId: string): Promise<number> {
+export async function idForClientId(db: D1Database, table: "sessions" | "hang_logs" | "injuries", clientId: string): Promise<number> {
   const row = await db.prepare(`SELECT id FROM ${table} WHERE client_id = ?`).bind(clientId).first<{ id: number }>();
   return row!.id;
 }
@@ -169,15 +169,87 @@ export async function addCoachNote(db: D1Database, date: string, text: string): 
   return row!.id;
 }
 
+export const INJURY_TRENDS = ["better", "same", "worse", "gone"];
+export const RED_FLAGS = ["swelling", "numbness", "night_pain"];
+
+export interface NewInjury {
+  body_part: string;
+  side?: string | null;
+  description?: string | null;
+}
+
+// clientId makes the insert idempotent, as for sessions; a replay returns no row.
+export function insertInjury(
+  db: D1Database,
+  i: NewInjury,
+  startedOn: string,
+  sessionId: number | null = null,
+  clientId: string | null = null,
+) {
+  return db
+    .prepare(
+      `INSERT INTO injuries (body_part, side, description, started_on, session_id, client_id)
+       VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
+    )
+    .bind(i.body_part, i.side ?? null, i.description ?? null, startedOn, sessionId, clientId);
+}
+
+export interface InjuryUpdate {
+  injury_id: number;
+  pain: number;
+  trend?: string | null;
+  stiffness?: number | null;
+  red_flags?: string[] | null;
+  note?: string | null;
+}
+
+// One update per injury per day: re-submitting the same day replaces it. "gone" also resolves the injury.
+export function injuryUpdateStmts(db: D1Database, date: string, u: InjuryUpdate) {
+  const stmts = [
+    db
+      .prepare(
+        `INSERT INTO injury_updates (injury_id, date, pain, trend, stiffness, red_flags, note)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT (injury_id, date) DO UPDATE SET
+           pain = excluded.pain, trend = excluded.trend, stiffness = excluded.stiffness,
+           red_flags = excluded.red_flags, note = excluded.note`,
+      )
+      .bind(
+        u.injury_id,
+        date,
+        u.pain,
+        u.trend ?? null,
+        u.stiffness ?? null,
+        u.red_flags?.length ? u.red_flags.join(",") : null,
+        u.note ?? null,
+      ),
+  ];
+  if (u.trend === "gone") {
+    stmts.push(
+      db.prepare("UPDATE injuries SET resolved_on = ? WHERE id = ? AND resolved_on IS NULL").bind(date, u.injury_id),
+    );
+  }
+  return stmts;
+}
+
+// Each update carries the load of the day before, so Claude can tell whether a session aggravated it.
 export async function activeInjuries(db: D1Database) {
   const injuries = await all<Row & { id: number }>(
     db,
-    "SELECT * FROM injuries WHERE resolved_on IS NULL ORDER BY started_on",
+    `SELECT i.*, s.date AS session_date, s.type AS session_type, s.duration_min AS session_duration_min,
+       s.rpe AS session_rpe
+     FROM injuries i LEFT JOIN sessions s ON s.id = i.session_id
+     WHERE i.resolved_on IS NULL ORDER BY i.started_on`,
   );
+  const fingerTypes = FINGER_TYPES.map((t) => `'${t}'`).join(", ");
   for (const inj of injuries) {
     inj.updates = await all(
       db,
-      "SELECT date, pain, note FROM injury_updates WHERE injury_id = ? ORDER BY date DESC, id DESC LIMIT 10",
+      `SELECT u.date, u.pain, u.trend, u.stiffness, u.red_flags, u.note,
+         (SELECT SUM(duration_min * rpe) FROM sessions WHERE date = date(u.date, '-1 day')) AS load_day_before,
+         (SELECT SUM(duration_min * rpe) FROM sessions
+          WHERE date = date(u.date, '-1 day') AND type IN (${fingerTypes})) AS finger_load_day_before
+       FROM injury_updates u WHERE u.injury_id = ? ORDER BY u.date DESC, u.id DESC LIMIT 14`,
       inj.id,
     );
   }

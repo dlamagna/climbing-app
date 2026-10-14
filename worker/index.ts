@@ -1,12 +1,18 @@
 import { Hono, type Context, type Next } from "hono";
 import {
   type Env,
+  type InjuryUpdate,
+  type NewInjury,
+  INJURY_TRENDS,
+  RED_FLAGS,
   addDays,
   activeInjuries,
   getPlan,
   getProfile,
   history,
   idForClientId,
+  injuryUpdateStmts,
+  insertInjury,
   insertSession,
   loadStats,
   moveCheckin,
@@ -52,7 +58,31 @@ async function sessionBody(c: C) {
   if (!isDate(s.date) || !s.type || !(s.duration_min > 0) || !(s.rpe >= 1 && s.rpe <= 10)) {
     throw new BadRequest("date, type, duration_min and rpe (1-10) are required");
   }
+  if (s.new_injury) newInjury(s.new_injury);
   return s;
+}
+
+function newInjury(i: any): NewInjury {
+  if (!i?.body_part) throw new BadRequest("body_part is required");
+  return i;
+}
+
+function injuryUpdate(u: any): InjuryUpdate {
+  if (!Number.isInteger(u?.injury_id) || !(u.pain >= 0 && u.pain <= 10)) {
+    throw new BadRequest("injury_id and pain (0-10) are required");
+  }
+  if (u.trend != null && !INJURY_TRENDS.includes(u.trend)) throw new BadRequest(`trend must be one of ${INJURY_TRENDS}`);
+  if (u.red_flags != null && !(Array.isArray(u.red_flags) && u.red_flags.every((f: string) => RED_FLAGS.includes(f)))) {
+    throw new BadRequest(`red_flags must be a list of ${RED_FLAGS}`);
+  }
+  return u;
+}
+
+// An injury quick-added from the session log starts on the session's date, linked to it unless link is false.
+async function sessionInjury(c: C, s: any, sessionId: number) {
+  if (!s.new_injury) return;
+  const key = clientId(c);
+  await insertInjury(c.env.DB, s.new_injury, s.date, s.new_injury.link === false ? null : sessionId, key).run();
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -92,6 +122,8 @@ api.get("/checkins/:date", async (c) => {
   return row ? c.json(row) : c.json({ error: "Check-in not found" }, 404);
 });
 
+// The check-in also carries the day's injury follow-ups and any injuries quick-added from it,
+// so the whole morning goes in one request (one outbox entry when offline).
 // A body.date different from the path moves the check-in to that day. Moving onto a day that already
 // has one needs overwrite: true, so a typo doesn't silently replace another morning's entry.
 api.put("/checkins/:date", async (c) => {
@@ -99,13 +131,21 @@ api.put("/checkins/:date", async (c) => {
   const body = await c.req.json();
   const to = body.date ?? date;
   if (!isDate(to)) throw new BadRequest("date must be YYYY-MM-DD");
+  const updates: InjuryUpdate[] = (body.injuries ?? []).map(injuryUpdate);
+  const added: NewInjury[] = (body.new_injuries ?? []).map(newInjury);
   if (to === date) {
     await upsertCheckin(c.env.DB, date, body);
-    return c.json({ ok: true });
+  } else {
+    const taken = await c.env.DB.prepare("SELECT 1 FROM checkins WHERE date = ?").bind(to).first();
+    if (taken && !body.overwrite) return c.json({ error: "There's already a check-in on that day" }, 409);
+    await moveCheckin(c.env.DB, date, to, body);
   }
-  const taken = await c.env.DB.prepare("SELECT 1 FROM checkins WHERE date = ?").bind(to).first();
-  if (taken && !body.overwrite) return c.json({ error: "There's already a check-in on that day" }, 409);
-  await moveCheckin(c.env.DB, date, to, body);
+  const key = clientId(c);
+  const stmts = [
+    ...updates.flatMap((u) => injuryUpdateStmts(c.env.DB, to, u)),
+    ...added.map((i, n) => insertInjury(c.env.DB, i, to, null, key && `${key}:${n}`)),
+  ];
+  if (stmts.length) await c.env.DB.batch(stmts);
   return c.json({ ok: true });
 });
 
@@ -114,7 +154,12 @@ api.delete("/checkins/:date", async (c) => {
   return c.json({ ok: true });
 });
 
-api.post("/sessions", async (c) => c.json({ id: await insertSession(c.env.DB, await sessionBody(c), clientId(c)) }));
+api.post("/sessions", async (c) => {
+  const s = await sessionBody(c);
+  const id = await insertSession(c.env.DB, s, clientId(c));
+  await sessionInjury(c, s, id);
+  return c.json({ id });
+});
 
 api.get("/sessions/:id", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM sessions WHERE id = ?").bind(Number(c.req.param("id"))).first();
@@ -122,8 +167,11 @@ api.get("/sessions/:id", async (c) => {
 });
 
 api.put("/sessions/:id", async (c) => {
-  const found = await updateSession(c.env.DB, Number(c.req.param("id")), await sessionBody(c));
-  return found ? c.json({ ok: true }) : c.json({ error: "Session not found" }, 404);
+  const id = Number(c.req.param("id"));
+  const s = await sessionBody(c);
+  if (!(await updateSession(c.env.DB, id, s))) return c.json({ error: "Session not found" }, 404);
+  await sessionInjury(c, s, id);
+  return c.json({ ok: true });
 });
 
 api.delete("/sessions/:id", async (c) => {
@@ -191,31 +239,21 @@ api.get("/injuries", async (c) => {
 
 api.post("/injuries", async (c) => {
   const i = await c.req.json();
-  if (!i.body_part || !isDate(i.started_on)) throw new BadRequest("body_part and started_on are required");
-  const row = await c.env.DB.prepare(
-    "INSERT INTO injuries (body_part, side, description, started_on) VALUES (?, ?, ?, ?) RETURNING id",
-  )
-    .bind(i.body_part, i.side ?? null, i.description ?? null, i.started_on)
-    .first<{ id: number }>();
+  if (!isDate(i.started_on)) throw new BadRequest("started_on is required");
+  const key = clientId(c);
+  const row = await insertInjury(c.env.DB, newInjury(i), i.started_on, null, key).first<{ id: number }>();
+  if (!row) return c.json({ id: (await idForClientId(c.env.DB, "injuries", key!)) }); // replayed
   if (typeof i.pain === "number") {
-    await c.env.DB.prepare("INSERT INTO injury_updates (injury_id, date, pain) VALUES (?, ?, ?)")
-      .bind(row!.id, i.started_on, i.pain)
-      .run();
+    await c.env.DB.batch(injuryUpdateStmts(c.env.DB, i.started_on, { injury_id: row.id, pain: i.pain }));
   }
-  return c.json({ id: row!.id });
+  return c.json({ id: row.id });
 });
 
-// One pain score per injury per day: re-rating the same day replaces the earlier score.
+// One update per injury per day: re-rating the same day replaces the earlier one.
 api.post("/injuries/:id/updates", async (c) => {
   const u = await c.req.json();
-  const id = Number(c.req.param("id"));
-  if (!isDate(u.date) || typeof u.pain !== "number") throw new BadRequest("date and pain are required");
-  await c.env.DB.batch([
-    c.env.DB.prepare("DELETE FROM injury_updates WHERE injury_id = ? AND date = ?").bind(id, u.date),
-    c.env.DB.prepare("INSERT INTO injury_updates (injury_id, date, pain, note) VALUES (?, ?, ?, ?)").bind(
-      id, u.date, u.pain, u.note ?? null,
-    ),
-  ]);
+  if (!isDate(u.date)) throw new BadRequest("date is required");
+  await c.env.DB.batch(injuryUpdateStmts(c.env.DB, u.date, injuryUpdate({ ...u, injury_id: Number(c.req.param("id")) })));
   return c.json({ ok: true });
 });
 
@@ -223,6 +261,20 @@ api.post("/injuries/:id/resolve", async (c) => {
   const { date } = await c.req.json();
   if (!isDate(date)) throw new BadRequest("date is required");
   await c.env.DB.prepare("UPDATE injuries SET resolved_on = ? WHERE id = ?").bind(date, Number(c.req.param("id"))).run();
+  return c.json({ ok: true });
+});
+
+// Makes a healed injury active again. With undo_date (the undo toast after tapping "gone"), that day's
+// "gone" update is dropped too, since it was a mis-tap rather than a real recovery.
+api.post("/injuries/:id/reopen", async (c) => {
+  const id = Number(c.req.param("id"));
+  const { undo_date } = await c.req.json();
+  await c.env.DB.batch([
+    c.env.DB.prepare("UPDATE injuries SET resolved_on = NULL WHERE id = ?").bind(id),
+    ...(isDate(undo_date)
+      ? [c.env.DB.prepare("DELETE FROM injury_updates WHERE injury_id = ? AND date = ? AND trend = 'gone'").bind(id, undo_date)]
+      : []),
+  ]);
   return c.json({ ok: true });
 });
 
