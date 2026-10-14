@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { send, useApi } from "../api";
-import { Card, PageHeader } from "../components/ui";
+import { savedToast, send, useApi } from "../api";
+import { Card, OverflowMenu, PageHeader } from "../components/ui";
 import { addDays, dayLabel, localToday, prettyDate } from "../dates";
 import { type HistoryView, type WeekLoad, typeLabel } from "../types";
 import { FEELING, SLEEP_QUALITY } from "./Today";
@@ -13,15 +13,19 @@ export default function History() {
 
   const dates = [...new Set([...data.sessions, ...data.checkins, ...data.hangs].map((r) => r.date))].sort().reverse();
 
-  async function remove(kind: "sessions" | "hangs", id: number) {
-    if (!confirm("Delete this entry?")) return;
-    await send("DELETE", `/${kind}/${id}`);
-    reload();
+  async function remove(what: string, path: string) {
+    if (!confirm(`Delete this ${what}? This can't be undone.`)) return;
+    try {
+      savedToast(await send("DELETE", path), "Deleted");
+      reload();
+    } catch (e) {
+      alert((e as Error).message);
+    }
   }
 
   return (
     <div className="page">
-      <PageHeader title="History" sub="Last 8 weeks · tap a session to edit" />
+      <PageHeader title="History" sub="Last 8 weeks · ⋯ to edit or delete an entry" />
       <Card title="Weekly training load">
         <LoadChart weeks={data.load.weeks} />
       </Card>
@@ -35,12 +39,21 @@ export default function History() {
           <section key={date} className="day">
             <h3>{dayLabel(date, today)}</h3>
             {c && (
-              <p className="muted small">
-                Sleep {c.sleep_hours ?? "?"}h {SLEEP_QUALITY[c.sleep_quality ?? 0]?.toLowerCase()} · {FEELING[c.feeling ?? 0] || "?"} ·{" "}
-                {c.drinks ?? "?"} drinks · protein {c.protein ?? "?"}
-                {c.weight_kg ? ` · ${c.weight_kg}kg` : ""}
-                {c.note ? ` · ${c.note}` : ""}
-              </p>
+              <div className="entry">
+                <p className="muted small">
+                  Sleep {c.sleep_hours ?? "?"}h {SLEEP_QUALITY[c.sleep_quality ?? 0]?.toLowerCase()} · {FEELING[c.feeling ?? 0] || "?"} ·{" "}
+                  {c.drinks ?? "?"} drinks · protein {c.protein ?? "?"}
+                  {c.weight_kg ? ` · ${c.weight_kg}kg` : ""}
+                  {c.note ? ` · ${c.note}` : ""}
+                </p>
+                <OverflowMenu
+                  label="Check-in options"
+                  items={[
+                    { label: "Edit", onSelect: () => (location.hash = `#/checkin?date=${c.date}`) },
+                    { label: "Delete", danger: true, onSelect: () => remove("check-in", `/checkins/${c.date}`) },
+                  ]}
+                />
+              </div>
             )}
             {sessions.map((s) => (
               <div key={s.id} className="entry">
@@ -48,11 +61,16 @@ export default function History() {
                   <strong>{typeLabel(s.type)}</strong> {s.duration_min} min · effort {s.rpe}
                   {s.max_grade && ` · ${s.max_grade}`}
                   <span className="muted"> · load {s.duration_min * s.rpe}</span>
+                  {s.updated_at && <span className="muted small"> · edited</span>}
                   {s.notes && <div className="muted small prewrap">{s.notes}</div>}
                 </a>
-                <button className="icon-btn" aria-label="Delete session" onClick={() => remove("sessions", s.id)}>
-                  ×
-                </button>
+                <OverflowMenu
+                  label={`${typeLabel(s.type)} session options`}
+                  items={[
+                    { label: "Edit", onSelect: () => (location.hash = `#/log?edit=${s.id}`) },
+                    { label: "Delete", danger: true, onSelect: () => remove("session", `/sessions/${s.id}`) },
+                  ]}
+                />
               </div>
             ))}
             {hangs.map((h) => (
@@ -63,9 +81,10 @@ export default function History() {
                   {h.grip ? ` ${h.grip}` : ""}
                   {h.added_kg ? ` · ${h.added_kg > 0 ? "+" : ""}${h.added_kg}kg` : ""}
                 </div>
-                <button className="icon-btn" aria-label="Delete hangboard log" onClick={() => remove("hangs", h.id)}>
-                  ×
-                </button>
+                <OverflowMenu
+                  label="Hangboard log options"
+                  items={[{ label: "Delete", danger: true, onSelect: () => remove("hangboard log", `/hangs/${h.id}`) }]}
+                />
               </div>
             ))}
           </section>

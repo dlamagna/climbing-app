@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { savedToast, send, useApi } from "../api";
-import { Chips, Field, PageHeader, Stepper, range } from "../components/ui";
-import { addDays, localToday, prettyDate } from "../dates";
+import { Chips, DatePicker, Field, PageHeader, Stepper, range } from "../components/ui";
+import { localToday } from "../dates";
 import { SESSION_TYPES, type Session } from "../types";
 
 export const EFFORT_HINT: Record<number, string> = {
@@ -19,7 +19,7 @@ export function effortHint(rpe: number | null) {
   return EFFORT_HINT[keys.filter((k) => k <= rpe).pop()!];
 }
 
-// #/log?edit=<id> opens an existing session (tapped in History) prefilled.
+// #/log?edit=<id> opens an existing session (from History) prefilled.
 export default function Log() {
   const editId = new URLSearchParams(location.hash.split("?")[1]).get("edit");
   const { data, error } = useApi<Session>(editId ? `/sessions/${editId}` : null);
@@ -36,8 +36,7 @@ export default function Log() {
 }
 
 function SessionForm({ session }: { session: Session | null }) {
-  const today = localToday();
-  const [date, setDate] = useState(session?.date ?? today);
+  const [date, setDate] = useState(session?.date ?? localToday());
   const [type, setType] = useState<string | null>(session?.type ?? null);
   const [duration, setDuration] = useState(session?.duration_min ?? 90);
   const [rpe, setRpe] = useState<number | null>(session?.rpe ?? null);
@@ -45,10 +44,6 @@ function SessionForm({ session }: { session: Session | null }) {
   const [notes, setNotes] = useState(session?.notes ?? "");
   const [busy, setBusy] = useState(false);
   const ready = type !== null && rpe !== null;
-
-  const dates = [today, addDays(today, -1), addDays(today, -2)];
-  if (!dates.includes(date)) dates.push(date); // an older session being edited
-  const dateLabel = (d: string) => (d === today ? "Today" : d === addDays(today, -1) ? "Yesterday" : prettyDate(d));
 
   async function submit() {
     setBusy(true);
@@ -80,11 +75,7 @@ function SessionForm({ session }: { session: Session | null }) {
       {session ? <PageHeader title="Edit session" back="#/history" /> : <PageHeader title="Log session" />}
       <div className="form">
         <Field label="When">
-          <Chips
-            options={dates.map((d) => ({ value: d, label: dateLabel(d) }))}
-            value={date}
-            onChange={(v) => v && setDate(v)}
-          />
+          <DatePicker value={date} onChange={setDate} />
         </Field>
         <Field label="What">
           <Chips wrap options={SESSION_TYPES} value={type} onChange={setType} />

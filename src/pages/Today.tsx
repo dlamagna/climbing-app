@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { savedToast, send, useApi } from "../api";
-import { Card, Chips, Field, Stepper, range } from "../components/ui";
+import { HttpError, savedToast, send, useApi } from "../api";
+import { Card, Chips, DatePicker, Field, Stepper, range } from "../components/ui";
 import { dayLabel, localToday, prettyDate } from "../dates";
 import { type Checkin, type Injury, type LoadStats, type PlanEntry, type TodayView, typeLabel } from "../types";
 
@@ -134,16 +134,19 @@ export function Stat({ label, value, sub }: { label: string; value: string; sub?
   );
 }
 
-function CheckinForm({
+// With editDate (editing from History) the date can be changed, which moves the check-in to that day.
+export function CheckinForm({
   date,
   initial,
   defaults,
   onSaved,
+  editDate = false,
 }: {
   date: string;
   initial: Checkin | null;
   defaults: Checkin | null;
   onSaved: (c: Checkin) => void;
+  editDate?: boolean;
 }) {
   // Prefill the "boring" fields so a normal day is three taps: sleep quality, feeling, save.
   const [c, setC] = useState<Checkin>(
@@ -166,7 +169,15 @@ function CheckinForm({
   async function submit() {
     setBusy(true);
     try {
-      savedToast(await send("PUT", `/checkins/${date}`, c), "Check-in saved");
+      let result;
+      try {
+        result = await send("PUT", `/checkins/${date}`, c);
+      } catch (e) {
+        if (!(e instanceof HttpError && e.status === 409)) throw e;
+        if (!confirm(`${prettyDate(c.date)} already has a check-in. Replace it with this one?`)) return;
+        result = await send("PUT", `/checkins/${date}`, { ...c, overwrite: true });
+      }
+      savedToast(result, "Check-in saved");
       onSaved(c);
     } catch (e) {
       alert((e as Error).message);
@@ -177,6 +188,11 @@ function CheckinForm({
 
   return (
     <div className="form">
+      {editDate && (
+        <Field label="Morning of">
+          <DatePicker value={c.date} onChange={(v) => set("date", v)} />
+        </Field>
+      )}
       <Field label="Sleep">
         <div className="row">
           <Stepper value={c.sleep_hours ?? 7.5} step={0.5} min={0} max={14} format={(v) => `${v}h`} onChange={(v) => set("sleep_hours", v)} />

@@ -28,6 +28,12 @@ export const setToken = (token: string | null) => save(TOKEN_KEY, token);
 
 export class AuthError extends Error {}
 
+export class HttpError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
+
 async function request<T>(method: string, path: string, body?: unknown, token = getToken(), key?: string): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
@@ -44,7 +50,7 @@ async function request<T>(method: string, path: string, body?: unknown, token = 
   }
   if (!res.ok) {
     const err = await res.json().catch(() => null);
-    throw new Error(err?.error ?? `Request failed (${res.status})`);
+    throw new HttpError(err?.error ?? `Request failed (${res.status})`, res.status);
   }
   return res.json() as Promise<T>;
 }

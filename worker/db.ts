@@ -68,8 +68,8 @@ export interface Checkin {
   note?: string | null;
 }
 
-export async function upsertCheckin(db: D1Database, date: string, c: Checkin) {
-  await db
+const checkinStmt = (db: D1Database, date: string, c: Checkin) =>
+  db
     .prepare(
       `INSERT INTO checkins (date, sleep_hours, sleep_quality, feeling, drinks, protein, weight_kg, note)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -88,8 +88,15 @@ export async function upsertCheckin(db: D1Database, date: string, c: Checkin) {
       c.protein ?? null,
       c.weight_kg ?? null,
       c.note ?? null,
-    )
-    .run();
+    );
+
+export async function upsertCheckin(db: D1Database, date: string, c: Checkin) {
+  await checkinStmt(db, date, c).run();
+}
+
+// Moves a check-in to another day (still one per day: it replaces whatever was on the new date).
+export async function moveCheckin(db: D1Database, from: string, to: string, c: Checkin) {
+  await db.batch([checkinStmt(db, to, c), db.prepare("DELETE FROM checkins WHERE date = ?").bind(from)]);
 }
 
 export interface Session {
@@ -120,7 +127,8 @@ export async function idForClientId(db: D1Database, table: "sessions" | "hang_lo
 
 export async function updateSession(db: D1Database, id: number, s: Session): Promise<boolean> {
   const { meta } = await db
-    .prepare("UPDATE sessions SET date = ?, type = ?, duration_min = ?, rpe = ?, max_grade = ?, notes = ? WHERE id = ?")
+    .prepare(`UPDATE sessions SET date = ?, type = ?, duration_min = ?, rpe = ?, max_grade = ?, notes = ?,
+       updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`)
     .bind(s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null, id)
     .run();
   return meta.changes > 0;

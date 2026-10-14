@@ -9,6 +9,7 @@ import {
   idForClientId,
   insertSession,
   loadStats,
+  moveCheckin,
   setPlan,
   todayView,
   updateProfile,
@@ -86,8 +87,30 @@ api.get("/history", async (c) => {
   return c.json({ ...h, load });
 });
 
+api.get("/checkins/:date", async (c) => {
+  const row = await c.env.DB.prepare("SELECT * FROM checkins WHERE date = ?").bind(dateParam(c, "date")).first();
+  return row ? c.json(row) : c.json({ error: "Check-in not found" }, 404);
+});
+
+// A body.date different from the path moves the check-in to that day. Moving onto a day that already
+// has one needs overwrite: true, so a typo doesn't silently replace another morning's entry.
 api.put("/checkins/:date", async (c) => {
-  await upsertCheckin(c.env.DB, dateParam(c, "date"), await c.req.json());
+  const date = dateParam(c, "date");
+  const body = await c.req.json();
+  const to = body.date ?? date;
+  if (!isDate(to)) throw new BadRequest("date must be YYYY-MM-DD");
+  if (to === date) {
+    await upsertCheckin(c.env.DB, date, body);
+    return c.json({ ok: true });
+  }
+  const taken = await c.env.DB.prepare("SELECT 1 FROM checkins WHERE date = ?").bind(to).first();
+  if (taken && !body.overwrite) return c.json({ error: "There's already a check-in on that day" }, 409);
+  await moveCheckin(c.env.DB, date, to, body);
+  return c.json({ ok: true });
+});
+
+api.delete("/checkins/:date", async (c) => {
+  await c.env.DB.prepare("DELETE FROM checkins WHERE date = ?").bind(dateParam(c, "date")).run();
   return c.json({ ok: true });
 });
 

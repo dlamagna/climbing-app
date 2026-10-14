@@ -17,6 +17,7 @@ export interface Session {
   rpe: number;
   max_grade: string | null;
   notes: string | null;
+  updated_at?: string | null; // set once edited
 }
 
 export interface HangLog {
