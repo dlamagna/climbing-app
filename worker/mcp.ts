@@ -14,6 +14,7 @@ import {
   upsertCheckin,
 } from "./db";
 import { ISSUE_LABELS, createIssue, githubEnabled, listIssues } from "./github";
+import { annotateSchema } from "./schema-docs";
 
 const SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
@@ -42,7 +43,8 @@ Load = duration_min * rpe. Check-in scales: sleep_quality 1-3, feeling 1-5 (5 = 
 drinks the day before, protein = rough low/ok/high for the day before.
 
 Use set_plan to write or rewrite the plan (one or more entries per date; existing entries on those dates are
-replaced). Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first).
+replaced). Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first: its column
+comments, with units and scales, come from the server code, since the database itself keeps none).
 
 If report_issue is available, it files issues on the app's own GitHub repo: feature ideas and bugs about
 this app, never training notes or personal data (the repo is public). Call list_issues first to avoid
@@ -93,14 +95,15 @@ const TOOLS: Tool[] = [
   },
   {
     name: "get_schema",
-    description: "The database schema (CREATE statements with column comments). Use before writing SQL for `query`.",
+    description:
+      "The database schema: CREATE statements with a comment per column (meaning, units, scales; maintained in the server code, since D1 strips SQL comments). Use before writing SQL for `query`.",
     inputSchema: { type: "object", properties: {} },
     annotations: { readOnlyHint: true },
     run: async (_a, env) => {
       const { results } = await env.DB.prepare(
         "SELECT sql FROM sqlite_master WHERE type IN ('table', 'view', 'index') AND sql IS NOT NULL AND name NOT LIKE '\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'd1_%'",
       ).all<{ sql: string }>();
-      return results.map((r) => r.sql).join(";\n\n");
+      return annotateSchema(results.map((r) => r.sql));
     },
   },
   {
