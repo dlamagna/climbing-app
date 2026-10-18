@@ -34,6 +34,7 @@ import {
   reportInjury,
   resolveInjury,
 } from "./injuries";
+import { tagsColumn, tagsError } from "./tags";
 import { handleMcp } from "./mcp";
 import { deleteSession } from "./sessions";
 import { PLAN_STATUSES, isPlanStatus } from "./plan";
@@ -73,8 +74,11 @@ async function sessionBody(c: C) {
     throw new BadRequest("date, type, duration_min and rpe (1-10) are required");
   }
   if (s.plan_id != null && !Number.isInteger(s.plan_id)) throw new BadRequest("plan_id must be an integer");
+  const tagError = tagsError(s.tags, s.type);
+  if (tagError) throw new BadRequest(tagError);
   if (s.new_injury) parseNewInjury(s.new_injury);
   s.benchmark_writes = badRequestOn(() => sessionBenchmarkWrites(s.benchmarks));
+  s.tags = tagsColumn(s.tags); // missing tags clear them on edit, like the other optional fields
   return s;
 }
 

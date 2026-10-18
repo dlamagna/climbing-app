@@ -399,7 +399,7 @@ export function LoadCard({ load }: { load: LoadStats }) {
       {load.ratio_provisional && (
         <p className="muted small">Provisional: based on {load.history_days} of 28 days of history.</p>
       )}
-      <p className="muted small">Load = minutes × effort, worked out from what you log.</p>
+      <p className="muted small">Load = minutes × effort, worked out from what you log. Finger load is weighted by type (board more, lead less) and style tags.</p>
     </Card>
   );
 }

@@ -11,6 +11,26 @@ import { schemaOf } from "./partial";
 import { profileInjuryWarnings, rejectedProfileWarning, splitProfileUpdate } from "./profile-injury";
 import { annotateSchema } from "./schema-docs";
 import { SESSION_TYPES } from "./sessions";
+import {
+  FINGER_WEIGHT_MAX,
+  FINGER_WEIGHT_MIN,
+  SESSION_TAGS,
+  TAG_FINGER_WEIGHTS,
+  TAG_TYPES,
+  TYPE_FINGER_WEIGHTS,
+  fingerWeight,
+  tagsColumn,
+  tagsError,
+} from "./tags";
+
+// Groups keys by weight, highest first, e.g. "board x1.2, boulder/hangboard x1, lead x0.7".
+const weightsText = (weights: Record<string, number>) =>
+  [...new Set(Object.values(weights))]
+    .sort((a, b) => b - a)
+    .map((w) => `${Object.keys(weights).filter((k) => weights[k] === w).join("/")} x${w}`)
+    .join(", ");
+const WEIGHTS_TEXT = weightsText(TAG_FINGER_WEIGHTS);
+const TYPE_WEIGHTS_TEXT = weightsText(TYPE_FINGER_WEIGHTS);
 
 const SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
@@ -81,6 +101,15 @@ swapped. Each conflict names the upcoming entry it affects (flag_date). When pla
 point them out and offer a set_plan rewrite of the rest of the week (ask first; the app never rewrites the
 plan itself). Fill duration_min in set_plan when the session length matters, so partial can be detected.
 
+Style tags: ${TAG_TYPES.join("/")} sessions may carry optional tags (sessions.tags, comma-separated: ${SESSION_TAGS.join(", ")}).
+Untagged is common and means "unknown", not "easy". Finger load in training_load is weighted per session by
+type x tag, clamped to ${FINGER_WEIGHT_MIN}-${FINGER_WEIGHT_MAX}. Type: ${TYPE_WEIGHTS_TEXT}. Tag: ${WEIGHTS_TEXT};
+a session with several tags takes the highest tag weight (so slab+crimpy counts as crimpy), untagged = x1, and a
+tag naming the session's own type (board on a board session) adds nothing. E.g. board+crimpy = x${fingerWeight("board", "crimpy")}, lead+slab = x${fingerWeight("lead", "slab")}.
+last7.finger, prev28_weekly_avg.finger, weeks[].finger and ratio_finger use the weighted value; the *.finger_raw
+fields are the plain unweighted sums. finger_load_day_before on injury updates is unweighted. Use the tags to check
+style rules such as "avoid small crimps", and pass tags to log_session / update_session when the climber describes the style.
+
 Use set_plan to write or rewrite the plan (one or more entries per date; existing entries on those dates are
 replaced, which also drops their status overrides and the sessions pinned to them; statuses are then derived
 again against the new entries, so already-logged days keep showing what happened).
@@ -115,7 +144,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_overview",
     description:
-      "Everything needed to recommend today's training: warnings (data problems to sort out first, if any), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok), recent check-ins (sleep, feeling, alcohol, protein), sessions, hangboard logs, plan for the past N days and next 7 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, and missing_benchmarks_last_7_days (planned tests with no result yet).",
+      "Everything needed to recommend today's training: warnings (data problems to sort out first, if any), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok; finger load weighted by session type and style tags, finger_raw unweighted), recent check-ins (sleep, feeling, alcohol, protein), sessions (with optional style tags), hangboard logs, plan for the past N days and next 7 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, and missing_benchmarks_last_7_days (planned tests with no result yet).",
     inputSchema: {
       type: "object",
       properties: {
@@ -240,10 +269,19 @@ const TOOLS: Tool[] = [
           type: "integer",
           description: "Only when this was a specific planned entry done on a different day or not auto-matched; otherwise sessions match the plan by date and type",
         },
+        tags: {
+          type: "array",
+          items: { type: "string", enum: SESSION_TAGS },
+          description: `Optional style tags, only for ${TAG_TYPES.join(", ")}. Weight finger load (see instructions).`,
+        },
       },
       required: ["type", "duration_min", "rpe"],
     },
-    run: async (a, env) => ({ id: await insertSession(env.DB, { ...a, date: await today(env, a.date) }) }),
+    run: async (a, env) => {
+      const error = tagsError(a.tags, a.type);
+      if (error) throw new Error(error);
+      return { id: await insertSession(env.DB, { ...a, tags: tagsColumn(a.tags), date: await today(env, a.date) }) };
+    },
   },
   {
     name: "upsert_checkin",

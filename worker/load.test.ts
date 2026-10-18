@@ -55,8 +55,8 @@ describe("computeLoadStats cold start", () => {
     expect(r.ratio_total).toBeNull();
     expect(r.ratio_finger).toBeNull();
     expect(r.ratio_provisional).toBe(false);
-    expect(r.last7).toEqual({ total: 0, finger: 0 });
-    expect(r.prev28_weekly_avg).toEqual({ total: 0, finger: 0 });
+    expect(r.last7).toEqual({ total: 0, finger: 0, finger_raw: 0 });
+    expect(r.prev28_weekly_avg).toEqual({ total: 0, finger: 0, finger_raw: 0 });
   });
 
   it("10 days of history: building, no ratio even with sessions before the last 7 days", () => {
@@ -67,7 +67,7 @@ describe("computeLoadStats cold start", () => {
     expect(r.ratio_total).toBeNull();
     expect(r.ratio_finger).toBeNull();
     expect(r.ratio_provisional).toBe(false);
-    expect(r.last7).toEqual({ total: 600, finger: 600 });
+    expect(r.last7).toEqual({ total: 600, finger: 640, finger_raw: 600 }); // board 200 x1.2 + boulder 400
   });
 
   it("20 days of history: partial, chronic average scaled over the 13 days that exist", () => {
@@ -82,11 +82,12 @@ describe("computeLoadStats cold start", () => {
     expect(r.history_days).toBe(20);
     expect(r.baseline_status).toBe("partial");
     expect(r.ratio_provisional).toBe(true);
-    // Chronic days = 20 - 7 = 13. Total 390 / 13 * 7 = 210; finger 330 / 13 * 7 = 177.7 -> 178.
-    expect(r.prev28_weekly_avg).toEqual({ total: 210, finger: 178 });
-    expect(r.last7).toEqual({ total: 420, finger: 300 });
+    // Chronic days = 20 - 7 = 13. Total 390 / 13 * 7 = 210; finger raw 330 / 13 * 7 = 177.7 -> 178;
+    // weighted (board x1.2) 370 / 13 * 7 = 199.2 -> 199.
+    expect(r.prev28_weekly_avg).toEqual({ total: 210, finger: 199, finger_raw: 178 });
+    expect(r.last7).toEqual({ total: 420, finger: 300, finger_raw: 300 });
     expect(r.ratio_total).toBe(2); // 420 / 210 (dividing by 4 weeks would have said 4.29)
-    expect(r.ratio_finger).toBe(1.69); // 300 / 178
+    expect(r.ratio_finger).toBe(1.51); // 300 / 199
   });
 
   it("35 days of history: ok, plain previous-28-day weekly average", () => {
@@ -102,8 +103,8 @@ describe("computeLoadStats cold start", () => {
     expect(r.history_days).toBe(35);
     expect(r.baseline_status).toBe("ok");
     expect(r.ratio_provisional).toBe(false);
-    expect(r.prev28_weekly_avg).toEqual({ total: 115, finger: 100 }); // 460 / 4, 400 / 4
-    expect(r.last7).toEqual({ total: 150, finger: 150 });
+    expect(r.prev28_weekly_avg).toEqual({ total: 115, finger: 100, finger_raw: 100 }); // 460 / 4, 400 / 4
+    expect(r.last7).toEqual({ total: 150, finger: 150, finger_raw: 150 });
     expect(r.ratio_total).toBe(1.3); // 150 / 115 = 1.304
     expect(r.ratio_finger).toBe(1.5);
   });
@@ -145,7 +146,7 @@ describe("computeLoadStats cold start", () => {
 });
 
 describe("computeLoadStats finger vs total load", () => {
-  it("counts boulder, board, lead and hangboard as finger load only", () => {
+  it("counts boulder, board, lead and hangboard as finger load only, weighted by type", () => {
     const rows = [
       s(1, "boulder", 10),
       s(1, "board", 20),
@@ -157,13 +158,14 @@ describe("computeLoadStats finger vs total load", () => {
       s(6, "other", 800),
     ];
     const r = computeLoadStats(rows, TODAY, ago(60), 4);
-    expect(r.last7).toEqual({ total: 1650, finger: 150 });
+    // boulder 10 x1 + board 20 x1.2 + lead 40 x0.7 + hangboard 80 x1 = 10 + 24 + 28 + 80
+    expect(r.last7).toEqual({ total: 1650, finger: 142, finger_raw: 150 });
   });
 
   it("computes the finger ratio independently of the total", () => {
     const rows = [s(20, "strength", 400), s(20, "hangboard", 100), s(2, "strength", 100), s(2, "hangboard", 50)];
     const r = computeLoadStats(rows, TODAY, ago(40), 4);
-    expect(r.prev28_weekly_avg).toEqual({ total: 125, finger: 25 });
+    expect(r.prev28_weekly_avg).toEqual({ total: 125, finger: 25, finger_raw: 25 });
     expect(r.ratio_total).toBe(1.2); // 150 / 125
     expect(r.ratio_finger).toBe(2); // 50 / 25
   });
@@ -175,9 +177,9 @@ describe("computeLoadStats weekly buckets", () => {
     const r = computeLoadStats(rows, TODAY, ago(60), 4);
     expect(r.weeks.map((w) => w.week_start)).toEqual(["2026-04-27", "2026-05-04", "2026-05-11", "2026-05-18"]);
     // Today (Wed 20th) and Mon 18th are this week; Sun 17th belongs to the week of the 11th.
-    expect(r.weeks[3]).toEqual({ week_start: "2026-05-18", total: 80, finger: 80, sessions: 2 });
-    expect(r.weeks[2]).toEqual({ week_start: "2026-05-11", total: 20, finger: 0, sessions: 1 });
-    expect(r.weeks[1]).toEqual({ week_start: "2026-05-04", total: 70, finger: 70, sessions: 1 });
+    expect(r.weeks[3]).toEqual({ week_start: "2026-05-18", total: 80, finger: 86, finger_raw: 80, sessions: 2 }); // board x1.2
+    expect(r.weeks[2]).toEqual({ week_start: "2026-05-11", total: 20, finger: 0, finger_raw: 0, sessions: 1 });
+    expect(r.weeks[1]).toEqual({ week_start: "2026-05-04", total: 70, finger: 49, finger_raw: 70, sessions: 1 }); // lead x0.7
     expect(r.weeks[0].sessions).toBe(0);
   });
 
@@ -190,13 +192,67 @@ describe("computeLoadStats weekly buckets", () => {
     ];
     const r = computeLoadStats(rows, today, "2026-11-01", 2);
     expect(r.weeks).toEqual([
-      { week_start: "2026-12-28", total: 140, finger: 100, sessions: 2 },
-      { week_start: "2027-01-04", total: 60, finger: 60, sessions: 1 },
+      { week_start: "2026-12-28", total: 140, finger: 100, finger_raw: 100, sessions: 2 },
+      { week_start: "2027-01-04", total: 60, finger: 72, finger_raw: 60, sessions: 1 }, // board x1.2
     ]);
   });
 
   it("queries far enough back for both the weeks and the chronic window", () => {
     expect(loadWindow(TODAY, 4)).toEqual({ from: ago(34), to: TODAY });
     expect(loadWindow(TODAY, 8)).toEqual({ from: "2026-03-30", to: TODAY });
+  });
+});
+
+describe("computeLoadStats weighted finger load", () => {
+  const t = (daysAgo: number, type: string, load: number, tags: string | null): LoadRow => ({ ...s(daysAgo, type, load), tags });
+
+  it("weights finger sessions by type x tags and keeps the raw sum", () => {
+    const rows = [
+      t(1, "boulder", 100, null), // x1
+      t(2, "boulder", 100, "slab,technique"), // x0.6
+      t(3, "board", 100, "crimpy"), // x1.2 x1.2 = 1.44
+      t(4, "lead", 100, "slab,overhang"), // x0.7 x1
+      t(5, "hangboard", 100, null), // x1, hangboard can't carry tags
+      t(6, "lead", 100, "slab"), // x0.7 x0.6 = 0.42, clamped to 0.5
+    ];
+    const r = computeLoadStats(rows, TODAY, ago(60), 4);
+    expect(r.last7).toEqual({ total: 600, finger: 524, finger_raw: 600 });
+  });
+
+  it("leaves total and non-finger types unaffected by tags", () => {
+    const rows = [t(1, "strength", 200, "crimpy"), t(2, "cardio", 100, "slab"), t(3, "boulder", 100, "slab")];
+    const r = computeLoadStats(rows, TODAY, ago(60), 4);
+    expect(r.last7).toEqual({ total: 400, finger: 60, finger_raw: 100 });
+  });
+
+  it("uses the weighted value for ratio_finger", () => {
+    // Previous 28 days: 4 untagged boulder sessions of 100 -> 100 a week, raw and weighted.
+    // Last 7 days: 150 of slab -> 90 weighted, 150 raw.
+    const rows = [
+      t(27, "boulder", 100, null),
+      t(20, "boulder", 100, null),
+      t(13, "boulder", 100, null),
+      t(8, "boulder", 100, null),
+      t(2, "boulder", 150, "slab"),
+    ];
+    const r = computeLoadStats(rows, TODAY, ago(60), 4);
+    expect(r.prev28_weekly_avg).toEqual({ total: 100, finger: 100, finger_raw: 100 });
+    expect(r.last7).toEqual({ total: 150, finger: 90, finger_raw: 150 });
+    expect(r.ratio_finger).toBe(0.9); // weighted; raw would have said 1.5
+    expect(r.ratio_total).toBe(1.5);
+  });
+
+  it("weights the chronic average and the weekly buckets too, rounding once", () => {
+    const rows = [
+      t(30, "board", 35, "crimpy"), // x1.44 = 50.4
+      t(20, "board", 35, "crimpy"), // 50.4
+      t(10, "boulder", 25, "vertical"), // 15
+      t(2, "boulder", 13, "slab"), // 7.8 -> 8
+    ];
+    const r = computeLoadStats(rows, TODAY, ago(60), 4);
+    expect(r.prev28_weekly_avg).toEqual({ total: 24, finger: 29, finger_raw: 24 }); // 95 / 4, 115.8 / 4
+    expect(r.last7).toEqual({ total: 13, finger: 8, finger_raw: 13 });
+    const week = r.weeks.find((w) => w.week_start === mondayOf(ago(10)))!;
+    expect(week).toEqual({ week_start: mondayOf(ago(10)), total: 25, finger: 15, finger_raw: 25, sessions: 1 });
   });
 });
