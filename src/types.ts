@@ -1,3 +1,7 @@
+import type { PlanConflict, PlanStatus } from "../worker/plan";
+
+export type { PlanConflict, PlanStatus };
+
 export interface Checkin {
   date: string;
   sleep_hours: number | null;
@@ -83,6 +87,13 @@ export interface PlanEntry {
   type: string | null;
   intensity: string | null;
   details: string | null;
+  duration_min?: number | null;
+  // Derived by the server (worker/plan.ts); missing in responses cached by older app versions.
+  status?: PlanStatus;
+  auto_status?: PlanStatus;
+  status_override?: PlanStatus | null;
+  session_id?: number | null;
+  flags?: PlanConflict[];
 }
 
 export interface CoachNote {
@@ -113,7 +124,8 @@ export interface TodayView {
   today: string;
   checkin: Checkin | null;
   last_checkin: Checkin | null;
-  plan: PlanEntry[];
+  plan: PlanEntry[]; // Monday of this week to 6 days ahead
+  plan_conflicts?: PlanConflict[];
   coach_notes: CoachNote[];
   sessions: Session[];
   injuries: Injury[];

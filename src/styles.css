@@ -748,3 +748,32 @@ button {
   align-items: center;
   gap: 10px;
 }
+
+/* Plan vs actual status chips (#21) */
+.plan-title {
+  flex-wrap: wrap;
+}
+.tag.status {
+  border: 1px solid var(--border);
+  font: inherit;
+  font-size: 12px;
+  min-height: 24px;
+}
+.tag.status.done {
+  color: var(--good);
+}
+.tag.status.partial,
+.tag.status.swapped {
+  color: var(--warn);
+}
+.tag.status.skipped {
+  color: var(--bad);
+}
+.status-picker {
+  flex-basis: 100%;
+}
+.flags {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+}

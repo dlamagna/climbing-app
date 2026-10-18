@@ -66,8 +66,24 @@ update_session and add_injury_update are partial: pass only what you were told; 
 value and null clears one. Fix a wrong session with update_session, or delete_session for a duplicate,
 instead of logging it again (session ids are in get_overview). Never invent values for things not mentioned.
 
+Plan vs actual: every plan entry has a status, derived when read from the sessions logged (so a session
+logged a day or two late still turns "skipped" into "done"). Sessions match the entries on their date: same
+type first, then a similar one (boulder/board/lead; strength/hangboard), else any free entry that day. Same
+type (or an entry with no type) = done, or partial if under 60% of the entry's duration_min; a different type
+= swapped; a session on a rest day makes the rest day swapped; nothing logged once the day is over = skipped;
+today and later = planned. auto_status is the derived one; the climber can override it in the app. A
+session's plan_id pins it to an entry (log_session / update_session plan_id, e.g. a planned session done
+on another day; null unpins);
+otherwise matching is automatic. get_overview returns plan_adherence (per day: entries, status, matched
+session_id, unplanned sessions), plan_week_so_far and plan_conflicts: training on a rest day, a hard day
+(effort 8+ or load 600+) not planned hard right before a planned hard day, a strength/test day skipped or
+swapped. Each conflict names the upcoming entry it affects (flag_date). When plan_conflicts is not empty,
+point them out and offer a set_plan rewrite of the rest of the week (ask first; the app never rewrites the
+plan itself). Fill duration_min in set_plan when the session length matters, so partial can be detected.
+
 Use set_plan to write or rewrite the plan (one or more entries per date; existing entries on those dates are
-replaced). Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first: its column
+replaced, which also drops their status overrides and the sessions pinned to them; statuses are then derived
+again against the new entries, so already-logged days keep showing what happened). Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first: its column
 comments, with units and scales, come from the server code, since the database itself keeps none).
 
 If report_issue is available, it files issues on the app's own GitHub repo: feature ideas and bugs about
@@ -88,7 +104,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_overview",
     description:
-      "Everything needed to recommend today's training: warnings (data problems to sort out first, if any), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok), recent check-ins (sleep, feeling, alcohol, protein), sessions, hangboard logs, plan for the past N days and next 7, recent coach notes and benchmarks.",
+      "Everything needed to recommend today's training: warnings (data problems to sort out first, if any), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok), recent check-ins (sleep, feeling, alcohol, protein), sessions, hangboard logs, plan for the past N days and next 7 (each entry with status), plan adherence per day, week-so-far counts, plan_conflicts, recent coach notes and benchmarks.",
     inputSchema: {
       type: "object",
       properties: {
@@ -147,6 +163,7 @@ const TOOLS: Tool[] = [
               type: { type: "string", enum: [...SESSION_TYPES, "rest"] },
               intensity: { type: "string", enum: ["rest", "easy", "moderate", "hard"] },
               details: { type: "string", description: "The actual workout: warm-up, sets, grades, times" },
+              duration_min: { type: "integer", minimum: 1, description: "Planned length; a much shorter session counts as partial" },
             },
             required: ["date", "title"],
           },
@@ -194,6 +211,10 @@ const TOOLS: Tool[] = [
         rpe: { type: "integer", minimum: 1, maximum: 10, description: "Effort 1-10" },
         max_grade: { type: "string" },
         notes: { type: "string" },
+        plan_id: {
+          type: "integer",
+          description: "Only when this was a specific planned entry done on a different day or not auto-matched; otherwise sessions match the plan by date and type",
+        },
       },
       required: ["type", "duration_min", "rpe"],
     },

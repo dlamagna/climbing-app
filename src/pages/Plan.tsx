@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { savedToast, send, useApi } from "../api";
+import { WeekSoFar } from "../components/planStatus";
 import { Card, Chips, Field, PageHeader } from "../components/ui";
 import { addDays, dayLabel, localToday } from "../dates";
 import type { PlanEntry } from "../types";
@@ -9,7 +10,8 @@ const INTENSITIES = ["rest", "easy", "moderate", "hard"].map((v) => ({ value: v,
 
 export default function Plan() {
   const today = localToday();
-  const { data, error, reload } = useApi<PlanEntry[]>(`/plan?from=${today}&to=${addDays(today, 41)}`);
+  // From a week back, so past days show what happened (and Monday onwards feeds the week-so-far line).
+  const { data, error, reload } = useApi<PlanEntry[]>(`/plan?from=${addDays(today, -7)}&to=${addDays(today, 41)}&today=${today}`);
   const [adding, setAdding] = useState(false);
 
   async function remove(id: number) {
@@ -22,7 +24,7 @@ export default function Plan() {
 
   return (
     <div className="page">
-      <PageHeader title="Plan" sub="Next 6 weeks" back="#/more" />
+      <PageHeader title="Plan" sub="Last week and the next 6" back="#/more" />
       <Card tone="accent">
         <p className="small">
           Easiest way to fill this: ask Claude something like <em>"Write my training plan for the next 4 weeks"</em>. It reads your profile and
@@ -32,6 +34,7 @@ export default function Plan() {
       {adding ? <AddEntry today={today} onDone={() => (setAdding(false), reload())} /> : (
         <button className="btn block" onClick={() => setAdding(true)}>+ Add a session by hand</button>
       )}
+      {data && <WeekSoFar entries={data} today={today} />}
       {error && <p className="error">{error}</p>}
       {data && dates.length === 0 && <p className="muted">Nothing planned yet.</p>}
       {dates.map((d) => (
@@ -39,7 +42,7 @@ export default function Plan() {
           <h3>{dayLabel(d, today)}</h3>
           {data!.filter((p) => p.date === d).map((p) => (
             <div key={p.id} className="entry">
-              <PlanItem entry={p} />
+              <PlanItem entry={p} today={today} onChanged={reload} />
               <button className="icon-btn" aria-label="Remove" onClick={() => remove(p.id)}>×</button>
             </div>
           ))}
