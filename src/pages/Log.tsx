@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { isQueued, savedToast, send, useApi } from "../api";
+import { isQueued, savedToast, send, toast, useApi } from "../api";
 import { benchmarkBody } from "../benchmarkInputs";
 import { type InjuryDraft, EMPTY_DRAFT, QuickInjury, draftBody } from "../components/injury";
 import { BenchmarkFields, useBenchmarkInputs } from "../components/plannedBenchmarks";
@@ -8,7 +8,8 @@ import { TagPicker, takesTags } from "../components/TagPicker";
 import { Chips, DatePicker, Field, PageHeader, Stepper, range } from "../components/ui";
 import { localToday } from "../dates";
 import { type NoteSuggestions as Suggestions, noteSuggestions } from "../painWords";
-import { type Injury, SESSION_TYPES, type Session } from "../types";
+import { type Injury, type Readiness, SESSION_TYPES, type Session, type TodayView } from "../types";
+import { isHardSession } from "../../worker/readiness";
 import { type SessionTag, parseTags } from "../../worker/tags";
 
 export const EFFORT_HINT: Record<number, string> = {
@@ -24,6 +25,13 @@ export function effortHint(rpe: number | null) {
   if (rpe === null) return "";
   const keys = Object.keys(EFFORT_HINT).map(Number);
   return EFFORT_HINT[keys.filter((k) => k <= rpe).pop()!];
+}
+
+// After logging a hard session (worker/plan.ts's hard-day definition) today on an amber / red day: a note
+// in the saved toast. Advisory only, logging is never blocked. The reasons are on the Today screen it goes to.
+export function readinessNote(r: Readiness | undefined, s: { date: string; duration_min: number; rpe: number }, today: string) {
+  if (!r || r.level === "green" || s.date !== today || !isHardSession(s)) return null;
+  return `Hard session on ${r.level === "red" ? "a red" : "an amber"} day: keep the rest of today easy and recover well.`;
 }
 
 // #/log?edit=<id> opens an existing session (from History) prefilled.
@@ -55,6 +63,7 @@ function SessionForm({ session }: { session: Session | null }) {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<{ suggestions: Suggestions<Injury>; sessionId: number | null; next: string } | null>(null);
   const { data: injuries } = useApi<{ active: Injury[] }>("/injuries");
+  const { data: todayView } = useApi<TodayView>(session ? null : `/today?date=${localToday()}`); // for readiness
   const tests = useBenchmarkInputs(date, session?.benchmarks);
   const ready = type !== null && rpe !== null && (!injury || injury.part !== null);
 
@@ -91,7 +100,10 @@ function SessionForm({ session }: { session: Session | null }) {
         afterSave(result, "#/history");
       } else {
         const result = await send("POST", "/sessions", body);
-        savedToast(result, injury ? "Session and injury logged" : "Session logged");
+        const what = injury ? "Session and injury logged" : "Session logged";
+        const note = readinessNote(todayView?.readiness, { date, duration_min: duration, rpe: rpe! }, localToday());
+        if (note) toast(`${what}${isQueued(result) ? " offline" : ""}. ${note}`, undefined, 7000);
+        else savedToast(result, what);
         afterSave(result, "#/today");
       }
     } catch (e) {

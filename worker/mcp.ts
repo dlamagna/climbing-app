@@ -43,7 +43,9 @@ climber first (they are data problems, e.g. an injury described in the profile b
 order: active injuries (pain trend matters more than a single value), last night's sleep and how they feel,
 alcohol in the last 1-2 days, training load
 (ratio_total / ratio_finger well above ~1.3 means a fast ramp; fingers adapt slower than muscle), consecutive
-hard days, and what the plan says for today. Give a concrete session (warm-up, main block with sets/grades/
+hard days, and what the plan says for today. get_overview's readiness (green/amber/red with reasons) is the
+same call the app shows under the check-in; start from it and agree with it unless you see a reason not to
+(then say why). It never blocks anything. Give a concrete session (warm-up, main block with sets/grades/
 times, what to avoid), not general advice. Then offer to save it with add_coach_note so it appears in the app.
 
 Injuries live only in the injuries / injury_updates tables, never in the profile (update_profile won't save
@@ -144,7 +146,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_overview",
     description:
-      "Everything needed to recommend today's training: warnings (data problems to sort out first, if any), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok; finger load weighted by session type and style tags, finger_raw unweighted), recent check-ins (sleep, feeling, alcohol, protein), sessions (with optional style tags), hangboard logs, plan for the past N days and next 7 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, and missing_benchmarks_last_7_days (planned tests with no result yet).",
+      "Everything needed to recommend today's training: warnings (data problems to sort out first, if any), readiness (green/amber/red with reasons, from check-in, hard days, load vs baseline and plan, injury trend; the same call the app shows), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok; finger load weighted by session type and style tags, finger_raw unweighted), recent check-ins (sleep, feeling, alcohol, protein), sessions (with optional style tags), hangboard logs, plan for the past N days and next 7 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, and missing_benchmarks_last_7_days (planned tests with no result yet).",
     inputSchema: {
       type: "object",
       properties: {

@@ -137,6 +137,9 @@ p {
 .card.tone-warn {
   border-color: color-mix(in srgb, var(--warn) 55%, var(--border));
 }
+.card.tone-bad {
+  border-color: color-mix(in srgb, var(--bad) 55%, var(--border));
+}
 .card-head {
   display: flex;
   justify-content: space-between;

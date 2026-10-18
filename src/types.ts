@@ -1,6 +1,7 @@
 import type { PlanConflict, PlanStatus } from "../worker/plan";
+import type { Readiness } from "../worker/readiness";
 
-export type { PlanConflict, PlanStatus };
+export type { PlanConflict, PlanStatus, Readiness };
 
 export interface Checkin {
   date: string;
@@ -145,6 +146,7 @@ export interface TodayView {
   sessions: Session[];
   injuries: Injury[];
   load: LoadStats;
+  readiness?: Readiness; // computed by the worker (worker/readiness.ts); missing in older cached responses
 }
 
 export interface HistoryView {
