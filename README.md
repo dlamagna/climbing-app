@@ -93,6 +93,8 @@ Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:loc
 |---|---|
 | `worker/index.ts` | REST API for the app (bearer `APP_TOKEN`) and MCP routing (`MCP_TOKEN`) |
 | `worker/mcp.ts` | MCP server: tools, plus instructions telling Claude how to coach from the data |
+| `worker/mcp-writes.ts` | MCP tools that report/update/resolve injuries and edit/delete sessions |
+| `worker/injuries.ts`, `sessions.ts`, `checkins.ts` | Validation and writes shared by the REST API and MCP (partial updates via `worker/partial.ts`) |
 | `worker/db.ts` | Queries shared by both, including training-load maths |
 | `migrations/` | Schema and default timer presets (D1 strips SQL comments; column docs for `get_schema` live in `worker/schema-docs.ts`) |
 | `src/pages/` | Today, Log, Timer, History, Plan, Injuries, Benchmarks, Settings |

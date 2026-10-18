@@ -1,6 +1,9 @@
 // Data access shared by the phone app's REST API and the MCP server.
 
+import { CHECKIN_COLUMNS, checkinUpsertSql } from "./checkins";
 import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, type LoadRow } from "./load";
+import { allColumns } from "./partial";
+import { SESSION_COLUMNS, updateSessionFields } from "./sessions";
 
 export { FINGER_TYPES, addDays, mondayOf, type WeekLoad } from "./load";
 
@@ -58,27 +61,12 @@ export interface Checkin {
   note?: string | null;
 }
 
-const checkinStmt = (db: D1Database, date: string, c: Checkin) =>
-  db
-    .prepare(
-      `INSERT INTO checkins (date, sleep_hours, sleep_quality, feeling, drinks, protein, weight_kg, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(date) DO UPDATE SET
-         sleep_hours = excluded.sleep_hours, sleep_quality = excluded.sleep_quality,
-         feeling = excluded.feeling, drinks = excluded.drinks, protein = excluded.protein,
-         weight_kg = excluded.weight_kg, note = excluded.note,
-         updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')`,
-    )
-    .bind(
-      date,
-      c.sleep_hours ?? null,
-      c.sleep_quality ?? null,
-      c.feeling ?? null,
-      c.drinks ?? null,
-      c.protein ?? null,
-      c.weight_kg ?? null,
-      c.note ?? null,
-    );
+// The app saves the whole form, so every column is written (missing ones as null). MCP's partial
+// update uses the same builder with only the fields it was given (worker/checkins.ts).
+function checkinStmt(db: D1Database, date: string, c: Checkin) {
+  const { sql, params } = checkinUpsertSql(date, allColumns(CHECKIN_COLUMNS, c as Record<string, unknown>));
+  return db.prepare(sql).bind(...params);
+}
 
 export async function upsertCheckin(db: D1Database, date: string, c: Checkin) {
   await checkinStmt(db, date, c).run();
@@ -115,13 +103,9 @@ export async function idForClientId(db: D1Database, table: "sessions" | "hang_lo
   return row!.id;
 }
 
+// The app's edit form sends every field; see worker/sessions.ts for the column whitelist.
 export async function updateSession(db: D1Database, id: number, s: Session): Promise<boolean> {
-  const { meta } = await db
-    .prepare(`UPDATE sessions SET date = ?, type = ?, duration_min = ?, rpe = ?, max_grade = ?, notes = ?,
-       updated_at = strftime('%Y-%m-%dT%H:%M:%SZ', 'now') WHERE id = ?`)
-    .bind(s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null, id)
-    .run();
-  return meta.changes > 0;
+  return (await updateSessionFields(db, id, allColumns(SESSION_COLUMNS, s as unknown as Record<string, unknown>))) !== null;
 }
 
 export interface PlanEntry {
@@ -157,70 +141,6 @@ export async function addCoachNote(db: D1Database, date: string, text: string): 
     .bind(date, text)
     .first<{ id: number }>();
   return row!.id;
-}
-
-export const INJURY_TRENDS = ["better", "same", "worse", "gone"];
-export const RED_FLAGS = ["swelling", "numbness", "night_pain"];
-
-export interface NewInjury {
-  body_part: string;
-  side?: string | null;
-  description?: string | null;
-  resolved_on?: string | null; // set when an already-healed injury is recorded after the fact
-}
-
-// clientId makes the insert idempotent, as for sessions; a replay returns no row.
-export function insertInjury(
-  db: D1Database,
-  i: NewInjury,
-  startedOn: string,
-  sessionId: number | null = null,
-  clientId: string | null = null,
-) {
-  return db
-    .prepare(
-      `INSERT INTO injuries (body_part, side, description, started_on, resolved_on, session_id, client_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
-    )
-    .bind(i.body_part, i.side ?? null, i.description ?? null, startedOn, i.resolved_on ?? null, sessionId, clientId);
-}
-
-export interface InjuryUpdate {
-  injury_id: number;
-  pain: number;
-  trend?: string | null;
-  stiffness?: number | null;
-  red_flags?: string[] | null;
-  note?: string | null;
-}
-
-// One update per injury per day: re-submitting the same day replaces it. "gone" also resolves the injury.
-export function injuryUpdateStmts(db: D1Database, date: string, u: InjuryUpdate) {
-  const stmts = [
-    db
-      .prepare(
-        `INSERT INTO injury_updates (injury_id, date, pain, trend, stiffness, red_flags, note)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT (injury_id, date) DO UPDATE SET
-           pain = excluded.pain, trend = excluded.trend, stiffness = excluded.stiffness,
-           red_flags = excluded.red_flags, note = excluded.note`,
-      )
-      .bind(
-        u.injury_id,
-        date,
-        u.pain,
-        u.trend ?? null,
-        u.stiffness ?? null,
-        u.red_flags?.length ? u.red_flags.join(",") : null,
-        u.note ?? null,
-      ),
-  ];
-  if (u.trend === "gone") {
-    stmts.push(
-      db.prepare("UPDATE injuries SET resolved_on = ? WHERE id = ? AND resolved_on IS NULL").bind(date, u.injury_id),
-    );
-  }
-  return stmts;
 }
 
 // Each update carries the load of the day before, so Claude can tell whether a session aggravated it.

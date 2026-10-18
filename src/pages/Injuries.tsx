@@ -3,6 +3,7 @@ import { savedToast, send, useApi } from "../api";
 import { injuryName, redFlagLabels } from "../components/injury";
 import { ReportForm, ResolveForm } from "../components/injuryForms";
 import { NoteReview } from "../components/noteSuggestions";
+import { ProfileInjuryBanner } from "../components/profileInjury";
 import { Card, PageHeader } from "../components/ui";
 import { dayLabel, localToday, prettyDate } from "../dates";
 import { type Injury, typeLabel } from "../types";
@@ -25,6 +26,7 @@ export default function Injuries() {
   return (
     <div className="page">
       <PageHeader title="Injuries" sub="Active injuries get a quick follow-up in the morning check-in." back="#/more" />
+      {data && <ProfileInjuryBanner activeCount={data.active.length} onTracked={reload} />}
       {reporting ? (
         <ReportForm onSaved={() => (setReporting(false), reload())} onCancel={() => setReporting(false)} />
       ) : (
