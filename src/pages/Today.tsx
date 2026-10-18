@@ -358,27 +358,36 @@ export function CheckinForm({
   );
 }
 
-export function loadMessage(ratio: number | null, last7: number): { tone: "" | "warn" | "bad"; text: string } {
-  if (ratio === null) {
-    return { tone: "", text: last7 ? "Comparison kicks in once there are a few weeks of history." : "No sessions in the last 7 days." };
+export function loadMessage(load: LoadStats): { tone: "" | "warn" | "bad"; text: string } {
+  const { ratio_total: ratio, last7 } = load;
+  if (load.baseline_status === "building") {
+    return { tone: "", text: `Building baseline (${load.history_days}/28 days).` };
   }
-  if (ratio > 1.5) return { tone: "bad", text: "Much more than your usual week. Go easy." };
-  if (ratio > 1.3) return { tone: "warn", text: "Ramping up fast compared to your usual week." };
-  if (ratio < 0.7) return { tone: "", text: "Lighter than your usual week." };
-  return { tone: "", text: "In line with your usual week." };
+  if (ratio === null) {
+    return { tone: "", text: last7.total ? "Nothing logged in the weeks before to compare with." : "No sessions in the last 7 days." };
+  }
+  const note = load.ratio_provisional ? " (provisional)" : "";
+  if (ratio > 1.5) return { tone: "bad", text: `Much more than your usual week${note}. Go easy.` };
+  if (ratio > 1.3) return { tone: "warn", text: `Ramping up fast compared to your usual week${note}.` };
+  if (ratio < 0.7) return { tone: "", text: `Lighter than your usual week${note}.` };
+  return { tone: "", text: `In line with your usual week${note}.` };
 }
 
 export function LoadCard({ load }: { load: LoadStats }) {
-  const msg = loadMessage(load.ratio_total, load.last7.total);
+  const msg = loadMessage(load);
   const fingerHigh = (load.ratio_finger ?? 0) > 1.3;
+  const usual = (n: number) => (load.baseline_status === "building" ? undefined : `usual ${n}`);
   return (
     <Card title="Training load · last 7 days">
       <div className="stats">
-        <Stat label="Total" value={String(load.last7.total)} sub={`usual ${load.prev28_weekly_avg.total}`} />
-        <Stat label="Fingers" value={String(load.last7.finger)} sub={`usual ${load.prev28_weekly_avg.finger}`} />
+        <Stat label="Total" value={String(load.last7.total)} sub={usual(load.prev28_weekly_avg.total)} />
+        <Stat label="Fingers" value={String(load.last7.finger)} sub={usual(load.prev28_weekly_avg.finger)} />
       </div>
       <p className={`muted small ${msg.tone}`}>{msg.text}</p>
       {fingerHigh && <p className="small warn">Finger load is up a lot - tendons adapt slower than muscle.</p>}
+      {load.ratio_provisional && (
+        <p className="muted small">Provisional: based on {load.history_days} of 28 days of history.</p>
+      )}
       <p className="muted small">Load = minutes × effort, worked out from what you log.</p>
     </Card>
   );
