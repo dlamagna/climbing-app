@@ -39,8 +39,14 @@ cap intensity. No medical-referral advice. Any red flag: fully unload the affect
 have been reported for a few days. Recently resolved (trend "gone"): taper back to full intensity over
 several sessions rather than jumping straight back.
 
-Load = duration_min * rpe. Check-in scales: sleep_quality 1-3, feeling 1-5 (5 = fresh), drinks = alcoholic
-drinks the day before, protein = rough low/ok/high for the day before.
+Load = duration_min * rpe, from sessions only. Each hangboard timer run writes a hang_logs row (the detail:
+preset, grip, edge, hangs done) plus a 'hangboard' session carrying its load, with a default rpe the climber
+may have adjusted (its client_id is the hang log's client_id + ':session'). Don't add hang_logs to load on
+top, that counts timer runs twice. A hang log without that session is from an older app version or was a
+warm-up the climber chose not to count.
+
+Check-in scales: sleep_quality 1-3, feeling 1-5 (5 = fresh), drinks = alcoholic drinks the day before,
+protein = rough low/ok/high for the day before.
 
 Load ratios need history: load.history_days counts days since the first session (inclusive). baseline_status
 "building" (< 14 days) means no ratio yet; "partial" (14-27) means the previous-weeks average covers only the
