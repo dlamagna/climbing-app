@@ -568,6 +568,82 @@ button {
   margin-top: 18px;
 }
 
+/* Progress line charts (components/LineChart.tsx): one series in the validated blue slot */
+.line-chart {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.line-chart svg {
+  display: block;
+  touch-action: pan-y; /* horizontal drag scrubs, vertical still scrolls the page */
+  outline: none;
+  border-radius: 6px;
+}
+.line-chart svg:focus-visible {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+.lc-grid {
+  stroke: var(--border);
+  stroke-width: 1;
+  shape-rendering: crispEdges;
+}
+.lc-tick {
+  fill: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.lc-cross {
+  stroke: var(--muted);
+  stroke-width: 1;
+  opacity: 0.6;
+  shape-rendering: crispEdges;
+}
+.lc-line {
+  fill: none;
+  stroke: var(--series-other);
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+.lc-mark {
+  fill: var(--series-other);
+  stroke: var(--surface); /* 2px surface ring */
+  stroke-width: 2;
+}
+.lc-mark.picked {
+  stroke: var(--text);
+  stroke-width: 2;
+}
+.lc-dot {
+  fill: var(--series-other);
+  opacity: 0.3;
+}
+.lc-detail {
+  margin: 0;
+}
+.lc-key {
+  display: inline-block;
+  vertical-align: middle;
+}
+.lc-key.line {
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--series-other);
+}
+.lc-key.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--series-other);
+  opacity: 0.3;
+}
+.load-baseline {
+  margin: 0;
+}
+
 /* Timer running view: full screen, colour = phase */
 .runner {
   position: fixed;

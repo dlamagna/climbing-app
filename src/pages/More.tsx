@@ -3,7 +3,7 @@ import { PageHeader } from "../components/ui";
 const LINKS = [
   { href: "#/plan", title: "Plan", sub: "Upcoming sessions (Claude can write these)" },
   { href: "#/injuries", title: "Injuries", sub: "Report one - adds a daily pain check until it's healed" },
-  { href: "#/benchmarks", title: "Benchmarks", sub: "Max hangs, pull-ups, grades over time" },
+  { href: "#/benchmarks", title: "Benchmarks", sub: "Test results and bodyweight over time" },
   { href: "#/settings", title: "Profile & settings", sub: "Goal, trip, availability, connecting Claude" },
 ];
 
