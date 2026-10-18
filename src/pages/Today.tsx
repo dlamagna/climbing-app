@@ -13,6 +13,7 @@ import {
   trendLabel,
 } from "../components/injury";
 import { ProfileInjuryBanner } from "../components/profileInjury";
+import { PlanFlags, StatusChip, WeekSoFar } from "../components/planStatus";
 import { Card, Chips, DatePicker, Field, Stepper, range } from "../components/ui";
 import { dayLabel, localToday, prettyDate } from "../dates";
 import { type Checkin, type Injury, type LoadStats, type PlanEntry, type TodayView, typeLabel } from "../types";
@@ -76,7 +77,7 @@ export default function Today() {
 
       <Card title="Today's plan">
         {todaysPlan.length ? (
-          todaysPlan.map((p) => <PlanItem key={p.id} entry={p} />)
+          todaysPlan.map((p) => <PlanItem key={p.id} entry={p} today={today} onChanged={reload} />)
         ) : (
           <p className="muted">Nothing planned. Ask Claude to write your plan, or add one under More → Plan.</p>
         )}
@@ -85,10 +86,12 @@ export default function Today() {
             {upcoming.map((p) => (
               <li key={p.id}>
                 <span className="muted">{dayLabel(p.date, today)}</span> {p.title}
+                <PlanFlags flags={p.flags} today={today} />
               </li>
             ))}
           </ul>
         )}
+        <WeekSoFar entries={data.plan} today={today} />
       </Card>
 
       <div className="actions">
@@ -118,14 +121,17 @@ export default function Today() {
   );
 }
 
-export function PlanItem({ entry }: { entry: PlanEntry }) {
+// With today, past and today's entries show their plan-vs-actual status chip (tap to change it).
+export function PlanItem({ entry, today, onChanged }: { entry: PlanEntry; today?: string; onChanged?: () => void }) {
   return (
     <div className="plan-item">
       <div className="plan-title">
         <strong>{entry.title}</strong>
         {entry.intensity && <span className={`tag ${entry.intensity}`}>{entry.intensity}</span>}
+        {today && <StatusChip entry={entry} today={today} onChanged={onChanged} />}
       </div>
       {entry.details && <p className="prewrap muted">{entry.details}</p>}
+      {today && <PlanFlags flags={entry.flags} today={today} />}
     </div>
   );
 }

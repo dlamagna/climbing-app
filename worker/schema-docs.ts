@@ -55,6 +55,8 @@ export const COLUMN_DOCS: Record<string, Record<string, string>> = {
     created_at: CREATED_AT,
     client_id: CLIENT_ID,
     updated_at: "when the session was last edited after logging (UTC timestamp); NULL = never edited",
+    plan_id:
+      "references plan.id: pinned link to the planned entry this session was (e.g. done on another day); NULL = matched automatically by date and type at read time. Cleared when that plan entry is deleted or replaced by set_plan",
   },
   hang_logs: {
     id: "row id",
@@ -118,6 +120,9 @@ export const COLUMN_DOCS: Record<string, Record<string, string>> = {
     intensity: "'rest' | 'easy' | 'moderate' | 'hard'",
     details: "the actual workout: warm-up, sets, grades, times",
     created_at: CREATED_AT,
+    status_override:
+      "status set by hand in the app: 'planned' | 'done' | 'partial' | 'skipped' | 'swapped'; NULL = automatic (derived from sessions at read time, see get_overview plan_adherence)",
+    duration_min: "planned duration in minutes, optional; a matched session under 60% of it counts as 'partial'",
   },
   coach_notes: {
     id: "row id",

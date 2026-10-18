@@ -16,6 +16,8 @@ export const SESSION_FIELDS: Record<string, FieldSpec> = {
   rpe: { check: isRpe, message: "rpe must be 1-10", schema: { type: "integer", minimum: 1, maximum: 10, description: "Effort 1-10" } },
   max_grade: { check: isString, message: "max_grade must be text", nullable: true, schema: { type: ["string", "null"], description: "Hardest send; null clears it" } },
   notes: { check: isString, message: "notes must be text", nullable: true, schema: { type: ["string", "null"], description: "Replaces the whole note; null clears it" } },
+  // Pinned link to a plan entry (#21, worker/plan.ts). The app's full-replace edit leaves it alone (db.updateSession).
+  plan_id: { check: isInt(1), message: "plan_id must be a plan entry id (integer)", nullable: true, schema: { type: ["integer", "null"], description: "Pin to this plan entry (e.g. a planned session done on another day); null goes back to automatic matching by date and type" } },
 };
 
 export const SESSION_COLUMNS = Object.keys(SESSION_FIELDS);
