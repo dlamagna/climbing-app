@@ -12,6 +12,7 @@ import {
   redFlagLabels,
   trendLabel,
 } from "../components/injury";
+import { ProfileInjuryBanner } from "../components/profileInjury";
 import { Card, Chips, DatePicker, Field, Stepper, range } from "../components/ui";
 import { dayLabel, localToday, prettyDate } from "../dates";
 import { type Checkin, type Injury, type LoadStats, type PlanEntry, type TodayView, typeLabel } from "../types";
@@ -35,6 +36,8 @@ export default function Today() {
       <header className="page-head">
         <h1>{prettyDate(today)}</h1>
       </header>
+
+      <ProfileInjuryBanner activeCount={data.injuries.length} onTracked={reload} />
 
       {data.checkin && !editing ? (
         <CheckinSummary checkin={data.checkin} injuries={data.injuries} today={today} onEdit={() => setEditing(true)} />

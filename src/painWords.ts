@@ -48,7 +48,8 @@ export function partOf(text: string): string | null {
   return best?.part ?? null;
 }
 
-function sideOf(t: string): NoteHit["side"] {
+export function sideOf(text: string): NoteHit["side"] {
+  const t = text.toLowerCase();
   const m = /\b(left|right)\b/.exec(t);
   return (m?.[1] as NoteHit["side"]) ?? null;
 }

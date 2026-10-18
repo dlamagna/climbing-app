@@ -29,7 +29,7 @@ export const TABLE_DOCS: Record<string, string> = {
   plan: "planned sessions, usually written by Claude via MCP set_plan",
   coach_notes: "recommendations Claude writes back; shown on the app's Today screen",
   benchmarks: "benchmark / test results over time",
-  profile: "free-form facts about the climber as key/value pairs: goal, trip_date, level, availability, timezone...",
+  profile: "free-form facts about the climber as key/value pairs: goal, trip_date, level, availability, timezone... Not injuries: those are rows in injuries",
 };
 
 export const COLUMN_DOCS: Record<string, Record<string, string>> = {

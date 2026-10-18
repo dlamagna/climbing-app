@@ -1,18 +1,11 @@
 import { Hono, type Context, type Next } from "hono";
 import {
   type Env,
-  type InjuryUpdate,
-  type NewInjury,
-  INJURY_TRENDS,
-  RED_FLAGS,
   addDays,
   activeInjuries,
   getPlan,
   getProfile,
   history,
-  idForClientId,
-  injuryUpdateStmts,
-  insertInjury,
   insertSession,
   loadStats,
   moveCheckin,
@@ -22,8 +15,23 @@ import {
   updateSession,
   upsertCheckin,
 } from "./db";
-import { injuryDatesError } from "./injury-dates";
+import { BadRequest } from "./errors";
+import {
+  type InjuryUpdate,
+  type NewInjury,
+  addInjuryUpdate,
+  checkUpdateDate,
+  injuryUpdateStmts,
+  insertInjury,
+  parseInjuryReport,
+  parseInjuryUpdate,
+  parseNewInjury,
+  reopenInjury,
+  reportInjury,
+  resolveInjury,
+} from "./injuries";
 import { handleMcp } from "./mcp";
+import { deleteSession } from "./sessions";
 import { deleteTimerSession, insertTimerLog, setTimerSessionRpe } from "./timerLog";
 import { isRpe } from "./timerSession";
 
@@ -51,8 +59,6 @@ function dateParam(c: C, name: string): string {
   return v;
 }
 
-class BadRequest extends Error {}
-
 // Sent by the app's outbox so a replayed insert (response lost on bad signal) isn't stored twice.
 const clientId = (c: C) => c.req.header("Idempotency-Key") || null;
 
@@ -61,38 +67,21 @@ async function sessionBody(c: C) {
   if (!isDate(s.date) || !s.type || !(s.duration_min > 0) || !(s.rpe >= 1 && s.rpe <= 10)) {
     throw new BadRequest("date, type, duration_min and rpe (1-10) are required");
   }
-  if (s.new_injury) newInjury(s.new_injury);
+  if (s.new_injury) parseNewInjury(s.new_injury);
   return s;
-}
-
-// Only the descriptive fields: dates and links are set by each route.
-function newInjury(i: any): NewInjury {
-  if (!i?.body_part) throw new BadRequest("body_part is required");
-  return { body_part: i.body_part, side: i.side ?? null, description: i.description ?? null };
-}
-
-function injuryUpdate(u: any): InjuryUpdate {
-  if (!Number.isInteger(u?.injury_id) || !(u.pain >= 0 && u.pain <= 10)) {
-    throw new BadRequest("injury_id and pain (0-10) are required");
-  }
-  if (u.trend != null && !INJURY_TRENDS.includes(u.trend)) throw new BadRequest(`trend must be one of ${INJURY_TRENDS}`);
-  if (u.red_flags != null && !(Array.isArray(u.red_flags) && u.red_flags.every((f: string) => RED_FLAGS.includes(f)))) {
-    throw new BadRequest(`red_flags must be a list of ${RED_FLAGS}`);
-  }
-  return u;
 }
 
 // An injury quick-added from the session log starts on the session's date, linked to it unless link is false.
 async function sessionInjury(c: C, s: any, sessionId: number) {
   if (!s.new_injury) return;
   const key = clientId(c);
-  await insertInjury(c.env.DB, newInjury(s.new_injury), s.date, s.new_injury.link === false ? null : sessionId, key).run();
+  await insertInjury(c.env.DB, parseNewInjury(s.new_injury), s.date, s.new_injury.link === false ? null : sessionId, key).run();
 }
 
 const app = new Hono<{ Bindings: Env }>();
 
 app.onError((err, c) => {
-  if (err instanceof BadRequest) return c.json({ error: err.message }, 400);
+  if (err instanceof BadRequest) return c.json({ error: err.message }, err.status);
   console.error(err);
   return c.json({ error: "Internal error" }, 500);
 });
@@ -135,8 +124,8 @@ api.put("/checkins/:date", async (c) => {
   const body = await c.req.json();
   const to = body.date ?? date;
   if (!isDate(to)) throw new BadRequest("date must be YYYY-MM-DD");
-  const updates: InjuryUpdate[] = (body.injuries ?? []).map(injuryUpdate);
-  const added: NewInjury[] = (body.new_injuries ?? []).map(newInjury);
+  const updates: InjuryUpdate[] = (body.injuries ?? []).map(parseInjuryUpdate);
+  const added: NewInjury[] = (body.new_injuries ?? []).map(parseNewInjury);
   if (to === date) {
     await upsertCheckin(c.env.DB, date, body);
   } else {
@@ -179,7 +168,7 @@ api.put("/sessions/:id", async (c) => {
 });
 
 api.delete("/sessions/:id", async (c) => {
-  await c.env.DB.prepare("DELETE FROM sessions WHERE id = ?").bind(Number(c.req.param("id"))).run();
+  await deleteSession(c.env.DB, Number(c.req.param("id")));
   return c.json({ ok: true });
 });
 
@@ -259,53 +248,30 @@ api.get("/injuries", async (c) => {
 
 // Can be backdated, and with resolved_on an injury that has already healed is recorded in one go.
 // session_id links it to the session it happened in (e.g. added from an old session note).
+// Validation and queries are shared with the MCP tools (worker/injuries.ts).
 api.post("/injuries", async (c) => {
-  const i = await c.req.json();
-  const dateError = injuryDatesError(i.started_on, i.resolved_on);
-  if (dateError) throw new BadRequest(dateError);
-  if (i.session_id != null && !Number.isInteger(i.session_id)) throw new BadRequest("session_id must be an integer");
-  const key = clientId(c);
-  const injury = { ...newInjury(i), resolved_on: i.resolved_on || null };
-  const row = await insertInjury(c.env.DB, injury, i.started_on, i.session_id ?? null, key).first<{ id: number }>();
-  if (!row) return c.json({ id: (await idForClientId(c.env.DB, "injuries", key!)) }); // replayed
-  if (typeof i.pain === "number") {
-    await c.env.DB.batch(injuryUpdateStmts(c.env.DB, i.started_on, { injury_id: row.id, pain: i.pain }));
-  }
-  return c.json({ id: row.id });
+  return c.json(await reportInjury(c.env.DB, parseInjuryReport(await c.req.json()), clientId(c)));
 });
 
 // One update per injury per day: re-rating the same day replaces the earlier one.
 api.post("/injuries/:id/updates", async (c) => {
   const u = await c.req.json();
-  if (!isDate(u.date)) throw new BadRequest("date is required");
-  await c.env.DB.batch(injuryUpdateStmts(c.env.DB, u.date, injuryUpdate({ ...u, injury_id: Number(c.req.param("id")) })));
+  const date = checkUpdateDate(u.date);
+  await addInjuryUpdate(c.env.DB, date, parseInjuryUpdate({ ...u, injury_id: Number(c.req.param("id")) }));
   return c.json({ ok: true });
 });
 
 // date may be in the past (healed a while ago), but not before the injury started.
 api.post("/injuries/:id/resolve", async (c) => {
-  const id = Number(c.req.param("id"));
   const { date } = await c.req.json();
-  if (!isDate(date)) throw new BadRequest("date is required");
-  const injury = await c.env.DB.prepare("SELECT started_on FROM injuries WHERE id = ?").bind(id).first<{ started_on: string }>();
-  if (!injury) return c.json({ error: "Injury not found" }, 404);
-  const dateError = injuryDatesError(injury.started_on, date);
-  if (dateError) throw new BadRequest(dateError);
-  await c.env.DB.prepare("UPDATE injuries SET resolved_on = ? WHERE id = ?").bind(date, id).run();
+  await resolveInjury(c.env.DB, Number(c.req.param("id")), checkUpdateDate(date));
   return c.json({ ok: true });
 });
 
-// Makes a healed injury active again. With undo_date (the undo toast after tapping "gone"), that day's
-// "gone" update is dropped too, since it was a mis-tap rather than a real recovery.
+// Makes a healed injury active again; undo_date also drops that day's "gone" update (undo toast).
 api.post("/injuries/:id/reopen", async (c) => {
-  const id = Number(c.req.param("id"));
   const { undo_date } = await c.req.json();
-  await c.env.DB.batch([
-    c.env.DB.prepare("UPDATE injuries SET resolved_on = NULL WHERE id = ?").bind(id),
-    ...(isDate(undo_date)
-      ? [c.env.DB.prepare("DELETE FROM injury_updates WHERE injury_id = ? AND date = ? AND trend = 'gone'").bind(id, undo_date)]
-      : []),
-  ]);
+  await reopenInjury(c.env.DB, Number(c.req.param("id")), undo_date);
   return c.json({ ok: true });
 });
 
