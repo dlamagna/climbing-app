@@ -6,6 +6,7 @@ import { type Env, type PlanEntry, addCoachNote, getProfile, insertSession, over
 import { isIsoDate } from "./injury-dates";
 import { ISSUE_LABELS, createIssue, githubEnabled, listIssues } from "./github";
 import { type Tool, dateSchema, today } from "./mcp-common";
+import { CHECKLIST_TOOL, InvalidParams, d1ChecklistLoader, handlePromptRequest } from "./mcp-prompts";
 import { WRITE_TOOLS } from "./mcp-writes";
 import { schemaOf } from "./partial";
 import { profileInjuryWarnings, rejectedProfileWarning, splitProfileUpdate } from "./profile-injury";
@@ -124,6 +125,22 @@ those already in use) so results line up over time; for a new test pick a short,
 20mm 10s', 'Max pull-ups') and a unit you will keep using ('kg added', 'reps', 's', 'min:s', 'grade').
 get_overview's missing_benchmarks_last_7_days lists planned tests from the last 7 days with no result yet (a
 result logged on a later day counts as done): offer to reschedule them into an upcoming day with set_plan.
+
+Voice-note logging: when the climber says "morning log" or "training log" (or picks the morning_log /
+training_log prompt), call get_log_checklist (kind morning or training; for training pass the date if they
+gave one) and reply with only its checklist, exactly as written: it is the same every time so they can read
+it while recording. Then they send a voice note. Reply with a short summary of what you understood, ask only
+about missed REQUIRED items (the tool's text says which), and save after they confirm. Map spoken values onto
+the scales: "slept like rubbish" = sleep_quality 1, "fine" = 2, "great" = 3; "knackered"/"wrecked" ~ feeling
+1-2, "fresh" = 5; "a couple of beers" = 2 drinks, "none" = 0; "barely any protein" = low; "easy" ~ effort 3-4,
+"hard" ~ 7-8, "all out" = 9-10. Never invent values for items not mentioned (no stiffness or red flag unless
+they say so). Save with partial writes: upsert_checkin with only the fields heard; add_injury_update per
+injury mentioned (injury_id from the tool's text; trend, stiffness, red_flags when said); log_session with
+the date, plan_id of the planned entry they confirm (the tool lists the entries for that date; if they name
+another date, call get_log_checklist again with it to get that day's plan_id and planned tests) and tags when
+they describe the style; log_benchmark for each test result, with the session date and the planned name and
+unit. A new tweak or injury: report_injury with started_on = the session date and session_id = the logged
+session's id.
 
 Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first: its column
 comments, with units and scales, come from the server code, since the database itself keeps none).
@@ -344,6 +361,7 @@ const TOOLS: Tool[] = [
     },
   },
   ...WRITE_TOOLS,
+  CHECKLIST_TOOL,
   {
     name: "list_issues",
     description: "List issues on the app's GitHub repo (roadmap, ideas, bugs). Use before report_issue to avoid duplicates.",
@@ -389,7 +407,7 @@ async function handleMessage(msg: JsonRpc, env: Env): Promise<object | null> {
       const requested = msg.params?.protocolVersion;
       return reply({
         protocolVersion: SUPPORTED_VERSIONS.includes(requested) ? requested : SUPPORTED_VERSIONS[0],
-        capabilities: { tools: { listChanged: false } },
+        capabilities: { tools: { listChanged: false }, prompts: { listChanged: false } },
         serverInfo: { name: "climbing-coach", version: "1.0.0" },
         instructions: INSTRUCTIONS,
       });
@@ -409,6 +427,14 @@ async function handleMessage(msg: JsonRpc, env: Env): Promise<object | null> {
         return reply({ content: [{ type: "text", text: `Error: ${(e as Error).message}` }], isError: true });
       }
     }
+    case "prompts/list":
+    case "prompts/get":
+      try {
+        return reply(await handlePromptRequest(msg.method, msg.params, d1ChecklistLoader(env)));
+      } catch (e) {
+        if (e instanceof InvalidParams) return fail(-32602, e.message);
+        return fail(-32603, (e as Error).message);
+      }
     default:
       return fail(-32601, `Method not found: ${msg.method}`);
   }
