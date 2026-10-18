@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { savedToast, send, useApi } from "../api";
+import { LineChart } from "../components/LineChart";
 import { Card, Field, PageHeader } from "../components/ui";
-import { localToday, prettyDate } from "../dates";
+import { addDays, localToday, prettyDate } from "../dates";
+import { type BenchmarkSeries, benchmarkSeries, formatClock, type Point, rollingAverage } from "../progress";
 import type { Benchmark } from "../types";
 
 const SUGGESTED = [
@@ -12,6 +14,8 @@ const SUGGESTED = [
   { name: "Hardest route", unit: "grade" },
   { name: "Bodyweight", unit: "kg" },
 ];
+
+const WEIGHT_DAYS = 84; // bodyweight chart: last 12 weeks
 
 export default function Benchmarks() {
   const { data, error, reload } = useApi<Benchmark[]>("/benchmarks");
@@ -31,7 +35,8 @@ export default function Benchmarks() {
     reload();
   }
 
-  const names = [...new Set((data ?? []).map((b) => b.name))];
+  const series = benchmarkSeries(data ?? []);
+  const names = series.map((s) => s.name);
 
   return (
     <div className="page">
@@ -54,17 +59,109 @@ export default function Benchmarks() {
           <button className="btn primary block" disabled={!name.trim() || !value.trim()} onClick={submit}>Save</button>
         </div>
       </Card>
+      <BodyweightCard />
       {error && <p className="error">{error}</p>}
-      {names.map((n) => (
-        <Card key={n} title={n}>
-          {data!.filter((b) => b.name === n).map((b) => (
-            <div key={b.id} className="entry">
-              <span><strong>{b.value}</strong> {b.unit} <span className="muted small">· {prettyDate(b.date)}</span></span>
-              <button className="icon-btn" aria-label="Delete" onClick={() => remove(b.id)}>×</button>
-            </div>
-          ))}
+      {data && series.length === 0 && (
+        <Card title="Tests">
+          <p className="muted small">No results yet. Tests planned on your plan show up in the session log on that day, or add one above.</p>
         </Card>
+      )}
+      {series.map((s) => (
+        <BenchmarkCard key={s.key} series={s} onDelete={remove} />
       ))}
     </div>
+  );
+}
+
+function BenchmarkCard({ series: s, onDelete }: { series: BenchmarkSeries<Benchmark>; onDelete: (id: number) => void }) {
+  const unit = s.unit ? ` ${s.unit}` : "";
+  const format = s.clock ? formatClock : (v: number) => String(Number(v.toFixed(2)));
+  return (
+    <Card title={s.unit ? `${s.name} (${s.unit})` : s.name}>
+      {s.points.length >= 2 ? (
+        <LineChart
+          points={s.points}
+          clock={s.clock}
+          format={format}
+          label={`${s.name} over time`}
+          detail={(date) => (
+            <>
+              {prettyDate(date)}: <strong>{s.points.filter((p) => p.date === date).map((p) => p.label).join(" / ")}</strong>
+              {unit}
+            </>
+          )}
+        />
+      ) : (
+        <p className="muted small">
+          {s.points.length === 1 ? "One result so far: the chart starts with the second." : "Only numbers and times are charted; grades and notes are listed below."}
+        </p>
+      )}
+      {s.points.length >= 2 && s.skipped > 0 && (
+        <p className="muted small">{s.skipped === 1 ? "1 result isn't a number and is" : `${s.skipped} results aren't numbers and are`} listed but not charted.</p>
+      )}
+      {s.rows.map((b) => (
+        <div key={b.id} className="entry">
+          <span><strong>{b.value}</strong> {b.unit} <span className="muted small">· {prettyDate(b.date)}</span></span>
+          <button className="icon-btn" aria-label="Delete" onClick={() => onDelete(b.id)}>×</button>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
+// Weigh-ins from the morning check-in: each day faint, with the 7-day rolling average as the line.
+function BodyweightCard() {
+  const today = localToday();
+  const from = addDays(today, -(WEIGHT_DAYS - 1));
+  // 6 extra days before the window so the first average in it is a full 7-day one.
+  const { data, error } = useApi<{ date: string; weight_kg: number }[]>(`/weights?from=${addDays(from, -6)}&to=${today}`);
+
+  if (!data) return error ? <p className="error">{error}</p> : null;
+  const all: Point[] = data.map((r) => ({ date: r.date, value: r.weight_kg }));
+  const daily = all.filter((p) => p.date >= from);
+  const avg = rollingAverage(all).filter((p) => p.date >= from);
+  const kg = (v: number) => v.toFixed(1);
+
+  return (
+    <Card title="Bodyweight (kg)">
+      {daily.length === 0 ? (
+        <p className="muted small">No weigh-ins in the last 12 weeks. Add your weight in the morning check-in to see the trend here.</p>
+      ) : (
+        <>
+          <p className="muted small">
+            Last 12 weeks · <i className="lc-key dot" /> daily · <i className="lc-key line" /> 7-day average
+          </p>
+          <LineChart
+            points={avg}
+            dots={daily}
+            markers={false}
+            gapDays={7}
+            format={kg}
+            label="Bodyweight, daily and 7-day average"
+            detail={(date) => {
+              const d = daily.find((p) => p.date === date);
+              const a = avg.find((p) => p.date === date);
+              return (
+                <>
+                  {prettyDate(date)}: <strong>{d ? kg(d.value) : "?"} kg</strong>
+                  {a && <span className="muted"> · 7-day average {kg(a.value)} kg</span>}
+                </>
+              );
+            }}
+          />
+          <details className="small">
+            <summary className="muted">All weigh-ins</summary>
+            {[...daily].reverse().map((p) => (
+              <div key={p.date} className="entry">
+                <span>
+                  <strong>{kg(p.value)}</strong> kg <span className="muted">· {prettyDate(p.date)}</span>
+                </span>
+                <span className="muted">avg {kg(avg.find((a) => a.date === p.date)!.value)}</span>
+              </div>
+            ))}
+          </details>
+        </>
+      )}
+    </Card>
   );
 }
