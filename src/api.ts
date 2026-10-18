@@ -34,6 +34,17 @@ export class HttpError extends Error {
   }
 }
 
+async function throwIfFailed(res: Response) {
+  if (res.status === 401) {
+    window.dispatchEvent(new Event("climb:auth"));
+    throw new AuthError("Wrong or missing app token");
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => null);
+    throw new HttpError(err?.error ?? `Request failed (${res.status})`, res.status);
+  }
+}
+
 async function request<T>(method: string, path: string, body?: unknown, token = getToken(), key?: string): Promise<T> {
   const res = await fetch(`/api${path}`, {
     method,
@@ -44,15 +55,17 @@ async function request<T>(method: string, path: string, body?: unknown, token = 
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  if (res.status === 401) {
-    window.dispatchEvent(new Event("climb:auth"));
-    throw new AuthError("Wrong or missing app token");
-  }
-  if (!res.ok) {
-    const err = await res.json().catch(() => null);
-    throw new HttpError(err?.error ?? `Request failed (${res.status})`, res.status);
-  }
+  await throwIfFailed(res);
   return res.json() as Promise<T>;
+}
+
+// Fetches a file the server sends as an attachment (the data export), with its filename.
+export async function fetchFile(path: string): Promise<File> {
+  const res = await fetch(`/api${path}`, { headers: { Authorization: `Bearer ${getToken() ?? ""}` } });
+  await throwIfFailed(res);
+  const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "climbing-export.json";
+  const blob = await res.blob();
+  return new File([blob], name, { type: blob.type || "application/octet-stream" });
 }
 
 export const checkToken = (token: string) => request("GET", "/profile", undefined, token);
