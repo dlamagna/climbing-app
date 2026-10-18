@@ -38,6 +38,36 @@ export function Chips<T extends string | number>({
   );
 }
 
+// Like Chips, but any number of options can be on.
+export function MultiChips<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: Option<T>[];
+  value: T[];
+  onChange: (v: T[]) => void;
+}) {
+  return (
+    <div className="chips wrap" role="group">
+      {options.map((o) => {
+        const on = value.includes(o.value);
+        return (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={on}
+            className={on ? "chip on" : "chip"}
+            onClick={() => onChange(on ? value.filter((v) => v !== o.value) : [...value, o.value])}
+          >
+            {o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export function Stepper({
   value,
   onChange,
@@ -127,8 +157,9 @@ export function seconds(s: number): string {
 }
 
 // Today / yesterday / two days ago as chips (the usual case), plus a calendar for anything older.
-// Future dates are not offered: these are logs of things that already happened.
-export function DatePicker({ value, onChange }: { value: string; onChange: (date: string) => void }) {
+// Future dates are not offered: these are logs of things that already happened. min only limits the calendar;
+// callers still validate (a quick chip can be earlier than min).
+export function DatePicker({ value, onChange, min }: { value: string; onChange: (date: string) => void; min?: string }) {
   const today = localToday();
   const quick = [today, addDays(today, -1), addDays(today, -2)];
   const [picking, setPicking] = useState(!quick.includes(value));
@@ -151,7 +182,7 @@ export function DatePicker({ value, onChange }: { value: string; onChange: (date
         }}
       />
       {picking && (
-        <input type="date" aria-label="Date" max={today} value={value} onChange={(e) => e.target.value && onChange(e.target.value)} />
+        <input type="date" aria-label="Date" min={min} max={today} value={value} onChange={(e) => e.target.value && onChange(e.target.value)} />
       )}
     </div>
   );

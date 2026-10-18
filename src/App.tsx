@@ -1,5 +1,5 @@
 import { type ComponentType, useEffect, useState } from "react";
-import { checkToken, flushOutbox, get, getToken, pendingCount, send, setToken, toast } from "./api";
+import { type ToastMessage, checkToken, flushOutbox, get, getToken, pendingCount, send, setToken, toast } from "./api";
 import Benchmarks from "./pages/Benchmarks";
 import CheckinEdit from "./pages/CheckinEdit";
 import History from "./pages/History";
@@ -66,11 +66,11 @@ export default function App() {
   const [authed, setAuthed] = useState(() => Boolean(getToken()));
   const path = usePath();
   const route = path.split("?")[0] || "today";
-  const [message, setMessage] = useState<string | null>(null);
+  const [message, setMessage] = useState<ToastMessage | null>(null);
 
   useEffect(() => {
     const onAuth = () => setAuthed(false);
-    const onToast = (e: Event) => setMessage((e as CustomEvent<string>).detail);
+    const onToast = (e: Event) => setMessage((e as CustomEvent<ToastMessage>).detail);
     const onOnline = () => void sync();
     window.addEventListener("climb:auth", onAuth);
     window.addEventListener("climb:toast", onToast);
@@ -88,7 +88,7 @@ export default function App() {
 
   useEffect(() => {
     if (!message) return;
-    const id = setTimeout(() => setMessage(null), 2500);
+    const id = setTimeout(() => setMessage(null), message.action ? 6000 : 2500); // time to reach for undo
     return () => clearTimeout(id);
   }, [message]);
 
@@ -103,7 +103,22 @@ export default function App() {
         <Page />
       </main>
       {pendingCount() > 0 && <div className="pending">{pendingCount()} unsynced</div>}
-      {message && <div className="toast" role="status">{message}</div>}
+      {message && (
+        <div className="toast" role="status">
+          {message.message}
+          {message.action && (
+            <button
+              className="toast-action"
+              onClick={() => {
+                message.action!.run();
+                setMessage(null);
+              }}
+            >
+              {message.action.label}
+            </button>
+          )}
+        </div>
+      )}
       <nav className="tabbar">
         {TABS.map((t) => (
           <a key={t.route} href={`#/${t.route}`} className={t.route === activeTab ? "on" : ""}>
