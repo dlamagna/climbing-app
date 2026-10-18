@@ -14,6 +14,7 @@ import { allColumns } from "./partial";
 import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, weekSummary } from "./plan";
 import { type ReadinessCheckin, type ReadinessInjury, readiness } from "./readiness";
 import { SESSION_COLUMNS, updateSessionFields } from "./sessions";
+import { type MixSession, mixWindows } from "./typeGroups";
 
 export { FINGER_TYPES, addDays, mondayOf, type WeekLoad } from "./load";
 
@@ -250,9 +251,12 @@ export async function loadStats(db: D1Database, today: string, weeks = 6) {
   return computeLoadStats(rows, today, first?.first ?? null, weeks);
 }
 
+export const sessionsBetween = (db: D1Database, from: string, to: string) =>
+  all(db, "SELECT * FROM sessions WHERE date BETWEEN ? AND ? ORDER BY date DESC, id DESC", from, to);
+
 export async function history(db: D1Database, from: string, to: string) {
   const [sessions, checkins, hangs] = await Promise.all([
-    all(db, "SELECT * FROM sessions WHERE date BETWEEN ? AND ? ORDER BY date DESC, id DESC", from, to),
+    sessionsBetween(db, from, to),
     all(db, "SELECT * FROM checkins WHERE date BETWEEN ? AND ? ORDER BY date DESC", from, to),
     all(db, "SELECT * FROM hang_logs WHERE date BETWEEN ? AND ? ORDER BY date DESC, id DESC", from, to),
   ]);
@@ -302,7 +306,7 @@ function todayReadiness(
 // Everything Claude needs to answer "how should I train today?" in one call.
 export async function overview(db: D1Database, today: string, days: number) {
   const from = addDays(today, -(days - 1));
-  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests] = await Promise.all([
+  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests, mixRows] = await Promise.all([
     getProfile(db),
     activeInjuries(db),
     loadStats(db, today, 6),
@@ -312,6 +316,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     all(db, "SELECT date, name, value, unit, notes FROM benchmarks ORDER BY date DESC LIMIT 30"),
     all(db, "SELECT body_part, side, started_on, resolved_on FROM injuries WHERE resolved_on IS NOT NULL ORDER BY resolved_on DESC LIMIT 5"),
     benchmarkOverview(db, today),
+    all<MixSession>(db, "SELECT date, type, duration_min, rpe FROM sessions WHERE date BETWEEN ? AND ?", addDays(today, -27), today),
   ]);
   return {
     today,
@@ -321,6 +326,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     recently_resolved_injuries: resolved,
     training_load: load,
     readiness: todayReadiness(today, hist.checkins.find((c) => c.date === today), load, plan, injuries),
+    mix: mixWindows(mixRows, today),
     checkins: hist.checkins,
     sessions: hist.sessions,
     hangboard: hist.hangs,

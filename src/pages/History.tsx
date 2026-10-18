@@ -1,7 +1,9 @@
 import { useState } from "react";
 import { savedToast, send, useApi } from "../api";
 import { TagList } from "../components/TagPicker";
-import { Card, OverflowMenu, PageHeader } from "../components/ui";
+import { TrainingMix } from "../components/TrainingMix";
+import { TypeWeekChart } from "../components/TypeWeekChart";
+import { Card, Chips, OverflowMenu, PageHeader } from "../components/ui";
 import { addDays, dayLabel, localToday, prettyDate } from "../dates";
 import { type HistoryView, type WeekLoad, typeLabel } from "../types";
 import { FEELING, SLEEP_QUALITY } from "./Today";
@@ -9,7 +11,9 @@ import { baselineNote } from "../progress";
 
 export default function History() {
   const today = localToday();
-  const { data, error, reload } = useApi<HistoryView>(`/history?from=${addDays(today, -55)}&to=${today}`);
+  const from = addDays(today, -55);
+  const { data, error, reload } = useApi<HistoryView>(`/history?from=${from}&to=${today}`);
+  const [chart, setChart] = useState<"load" | "type">("load");
 
   if (!data) return <div className="page">{error ? <p className="error">{error}</p> : <p className="muted">Loading…</p>}</div>;
 
@@ -28,9 +32,24 @@ export default function History() {
   return (
     <div className="page">
       <PageHeader title="History" sub="Last 8 weeks · ⋯ to edit or delete an entry" />
-      <Card title="Weekly training load">
-        <LoadChart weeks={data.load.weeks} baseline={baselineNote(data.load)} />
+      <Card title={chart === "load" ? "Weekly training load" : "Weekly minutes by type"}>
+        <div className="view-toggle">
+          <Chips
+            options={[
+              { value: "load", label: "Fingers / other" },
+              { value: "type", label: "By type" },
+            ]}
+            value={chart}
+            onChange={(v) => v && setChart(v)}
+          />
+        </div>
+        {chart === "load" ? (
+          <LoadChart weeks={data.load.weeks} baseline={baselineNote(data.load)} />
+        ) : (
+          <TypeWeekChart weekStarts={data.load.weeks.map((w) => w.week_start)} sessions={data.sessions} />
+        )}
       </Card>
+      <TrainingMix sessions={data.sessions} from={from} today={today} />
 
       {dates.length === 0 && <p className="muted">Nothing logged yet.</p>}
       {dates.map((date) => {

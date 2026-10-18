@@ -11,6 +11,7 @@ import {
   moveCheckin,
   sessionBenchmarkStmts,
   setPlan,
+  sessionsBetween,
   setPlanStatus,
   todayIn,
   todayView,
@@ -132,6 +133,8 @@ api.get("/today", async (c) => c.json(await todayView(c.env.DB, dateParam(c, "da
 api.get("/history", async (c) => {
   const to = dateParam(c, "to");
   const from = dateParam(c, "from");
+  // only=sessions: just the sessions (the calendar browsing older months needs nothing else).
+  if (c.req.query("only") === "sessions") return c.json({ sessions: await sessionsBetween(c.env.DB, from, to) });
   const [h, load] = await Promise.all([history(c.env.DB, from, to), loadStats(c.env.DB, to, 8)]);
   return c.json({ ...h, load });
 });
