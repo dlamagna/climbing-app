@@ -103,6 +103,9 @@ export interface LoadStats {
   prev28_weekly_avg: { total: number; finger: number };
   ratio_total: number | null;
   ratio_finger: number | null;
+  history_days: number; // days from the first logged session to today, inclusive
+  baseline_status: "building" | "partial" | "ok"; // < 14 days: no ratio; 14-27: provisional; 28+: ok
+  ratio_provisional: boolean;
   weeks: WeekLoad[];
 }
 

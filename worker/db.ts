@@ -1,5 +1,9 @@
 // Data access shared by the phone app's REST API and the MCP server.
 
+import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, type LoadRow } from "./load";
+
+export { FINGER_TYPES, addDays, mondayOf, type WeekLoad } from "./load";
+
 export interface Env {
   DB: D1Database;
   ASSETS: Fetcher;
@@ -10,20 +14,6 @@ export interface Env {
 }
 
 type Row = Record<string, unknown>;
-
-// Session types that load the fingers; tracked separately because tendons adapt slower than muscle.
-export const FINGER_TYPES = ["boulder", "board", "lead", "hangboard"];
-
-export function addDays(date: string, days: number): string {
-  const d = new Date(`${date}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-export function mondayOf(date: string): string {
-  const dow = new Date(`${date}T00:00:00Z`).getUTCDay(); // 0 = Sunday
-  return addDays(date, -((dow + 6) % 7));
-}
 
 export function todayIn(timeZone: string | undefined): string {
   try {
@@ -257,59 +247,14 @@ export async function activeInjuries(db: D1Database) {
   return injuries;
 }
 
-export interface WeekLoad {
-  week_start: string;
-  total: number;
-  finger: number;
-  sessions: number;
-}
-
-// Training load = minutes x effort (session-RPE). Compares the last 7 days against the average
-// week of the 28 days before; a ratio well above ~1.3 means load is ramping up quickly.
+// Training load stats (7-day vs previous 28 days, with a cold-start baseline); see worker/load.ts.
 export async function loadStats(db: D1Database, today: string, weeks = 6) {
-  const from = addDays(mondayOf(today), -7 * (weeks - 1));
-  const earliest = from < addDays(today, -34) ? from : addDays(today, -34);
-  const rows = await all<{ date: string; type: string; load: number }>(
-    db,
-    "SELECT date, type, duration_min * rpe AS load FROM sessions WHERE date BETWEEN ? AND ?",
-    earliest,
-    today,
-  );
-
-  const sum = (lo: string, hi: string, fingerOnly: boolean) =>
-    rows
-      .filter((r) => r.date >= lo && r.date <= hi && (!fingerOnly || FINGER_TYPES.includes(r.type)))
-      .reduce((acc, r) => acc + r.load, 0);
-
-  const acuteFrom = addDays(today, -6);
-  const chronicFrom = addDays(today, -34);
-  const chronicTo = addDays(today, -7);
-  const last7 = { total: sum(acuteFrom, today, false), finger: sum(acuteFrom, today, true) };
-  const prevWeeklyAvg = {
-    total: Math.round(sum(chronicFrom, chronicTo, false) / 4),
-    finger: Math.round(sum(chronicFrom, chronicTo, true) / 4),
-  };
-  const ratio = (a: number, b: number) => (b > 0 ? Math.round((a / b) * 100) / 100 : null);
-
-  const byWeek: WeekLoad[] = [];
-  for (let i = 0; i < weeks; i++) {
-    const start = addDays(from, 7 * i);
-    const end = addDays(start, 6);
-    byWeek.push({
-      week_start: start,
-      total: sum(start, end, false),
-      finger: sum(start, end, true),
-      sessions: rows.filter((r) => r.date >= start && r.date <= end).length,
-    });
-  }
-
-  return {
-    last7,
-    prev28_weekly_avg: prevWeeklyAvg,
-    ratio_total: ratio(last7.total, prevWeeklyAvg.total),
-    ratio_finger: ratio(last7.finger, prevWeeklyAvg.finger),
-    weeks: byWeek,
-  };
+  const { from, to } = loadWindow(today, weeks);
+  const [rows, first] = await Promise.all([
+    all<LoadRow>(db, "SELECT date, type, duration_min * rpe AS load FROM sessions WHERE date BETWEEN ? AND ?", from, to),
+    db.prepare("SELECT MIN(date) AS first FROM sessions WHERE date <= ?").bind(today).first<{ first: string | null }>(),
+  ]);
+  return computeLoadStats(rows, today, first?.first ?? null, weeks);
 }
 
 export async function history(db: D1Database, from: string, to: string) {

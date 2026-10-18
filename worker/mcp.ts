@@ -42,6 +42,11 @@ several sessions rather than jumping straight back.
 Load = duration_min * rpe. Check-in scales: sleep_quality 1-3, feeling 1-5 (5 = fresh), drinks = alcoholic
 drinks the day before, protein = rough low/ok/high for the day before.
 
+Load ratios need history: load.history_days counts days since the first session (inclusive). baseline_status
+"building" (< 14 days) means no ratio yet; "partial" (14-27) means the previous-weeks average covers only the
+days that exist (scaled to a week) and ratio_provisional is true, so treat it as a rough guide; "ok" (28+) is
+the normal 7-day vs previous-28-day comparison.
+
 Use set_plan to write or rewrite the plan (one or more entries per date; existing entries on those dates are
 replaced). Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first: its column
 comments, with units and scales, come from the server code, since the database itself keeps none).
@@ -82,7 +87,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_overview",
     description:
-      "Everything needed to recommend today's training: profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats, recent check-ins (sleep, feeling, alcohol, protein), sessions, hangboard logs, plan for the past N days and next 7, recent coach notes and benchmarks.",
+      "Everything needed to recommend today's training: profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok), recent check-ins (sleep, feeling, alcohol, protein), sessions, hangboard logs, plan for the past N days and next 7, recent coach notes and benchmarks.",
     inputSchema: {
       type: "object",
       properties: {
