@@ -160,10 +160,11 @@ export interface ToastAction {
 export interface ToastMessage {
   message: string;
   action?: ToastAction;
+  ms?: number; // how long it stays up (default: 2.5 s, 6 s with an action)
 }
 
-export function toast(message: string, action?: ToastAction) {
-  window.dispatchEvent(new CustomEvent<ToastMessage>("climb:toast", { detail: { message, action } }));
+export function toast(message: string, action?: ToastAction, ms?: number) {
+  window.dispatchEvent(new CustomEvent<ToastMessage>("climb:toast", { detail: { message, action, ms } }));
 }
 
 // Shows the right toast for a write that may have been queued.

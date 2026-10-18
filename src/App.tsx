@@ -88,7 +88,7 @@ export default function App() {
 
   useEffect(() => {
     if (!message) return;
-    const id = setTimeout(() => setMessage(null), message.action ? 6000 : 2500); // time to reach for undo
+    const id = setTimeout(() => setMessage(null), message.ms ?? (message.action ? 6000 : 2500)); // time to reach for undo
     return () => clearTimeout(id);
   }, [message]);
 
