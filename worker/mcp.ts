@@ -1,20 +1,16 @@
 // A minimal, stateless MCP server (Streamable HTTP transport, JSON responses only).
 // Claude Code and claude.ai custom connectors both speak this, so no SDK is needed.
 
-import {
-  type Env,
-  type PlanEntry,
-  addCoachNote,
-  getProfile,
-  insertSession,
-  overview,
-  setPlan,
-  todayIn,
-  updateProfile,
-  upsertCheckin,
-} from "./db";
+import { CHECKIN_FIELDS, checkinPatch, upsertCheckinPartial } from "./checkins";
+import { type Env, type PlanEntry, addCoachNote, getProfile, insertSession, overview, setPlan, updateProfile } from "./db";
+import { isIsoDate } from "./injury-dates";
 import { ISSUE_LABELS, createIssue, githubEnabled, listIssues } from "./github";
+import { type Tool, dateSchema, today } from "./mcp-common";
+import { WRITE_TOOLS } from "./mcp-writes";
+import { schemaOf } from "./partial";
+import { profileInjuryWarnings, rejectedProfileWarning, splitProfileUpdate } from "./profile-injury";
 import { annotateSchema } from "./schema-docs";
+import { SESSION_TYPES } from "./sessions";
 
 const SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
@@ -22,13 +18,24 @@ const INSTRUCTIONS = `This server is a climber's personal training log (sessions
 timer logs, injuries, a training plan, profile/goals). The data is entered from a phone app with as few taps
 as possible, so values are rough.
 
-When asked how to train today: call get_overview first. Weigh, in order: active injuries (pain trend matters
-more than a single value), last night's sleep and how they feel, alcohol in the last 1-2 days, training load
+When asked how to train today: call get_overview first. If it returns warnings, sort those out with the
+climber first (they are data problems, e.g. an injury described in the profile but not tracked). Weigh, in
+order: active injuries (pain trend matters more than a single value), last night's sleep and how they feel,
+alcohol in the last 1-2 days, training load
 (ratio_total / ratio_finger well above ~1.3 means a fast ramp; fingers adapt slower than muscle), consecutive
 hard days, and what the plan says for today. Give a concrete session (warm-up, main block with sets/grades/
 times, what to avoid), not general advice. Then offer to save it with add_coach_note so it appears in the app.
 
-Injuries: the morning check-in records, per active injury, pain 0-10, trend vs the day before (better/same/
+Injuries live only in the injuries / injury_updates tables, never in the profile (update_profile won't save
+injury keys such as current_injury; remove an old one with update_profile {"current_injury": null} once it is
+tracked). The app's morning injury check and the pain trend only exist for rows in injuries. When the climber
+mentions a new tweak or injury, record it with report_injury (started_on can be in the past; with resolved_on
+an injury that has already healed is recorded in one step; session_id links the session it happened in).
+Record pain they tell you about with add_injury_update (one per injury per day, partial like check-ins),
+and mark one healed with resolve_injury (resolved_on: null reopens it). Put injury-specific training rules
+in the injury's description or the plan.
+
+The morning check-in records, per active injury, pain 0-10, trend vs the day before (better/same/
 worse/gone), morning stiffness and red flags (swelling, numbness, night_pain). Each update carries
 load_day_before / finger_load_day_before: infer from these whether the previous day's session aggravated it
 (e.g. "worse" after a hard finger day) and adjust; don't ask the climber. An injury's session_* fields are the
@@ -53,6 +60,12 @@ Load ratios need history: load.history_days counts days since the first session 
 days that exist (scaled to a week) and ratio_provisional is true, so treat it as a rough guide; "ok" (28+) is
 the normal 7-day vs previous-28-day comparison.
 
+Writing: anything the climber tells you can be saved, and logging is often done a day or two late, so
+always pass the date they mean (dates default to today in the climber's timezone). upsert_checkin,
+update_session and add_injury_update are partial: pass only what you were told; omitted fields keep their
+value and null clears one. Fix a wrong session with update_session, or delete_session for a duplicate,
+instead of logging it again (session ids are in get_overview). Never invent values for things not mentioned.
+
 Use set_plan to write or rewrite the plan (one or more entries per date; existing entries on those dates are
 replaced). Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first: its column
 comments, with units and scales, come from the server code, since the database itself keeps none).
@@ -60,24 +73,6 @@ comments, with units and scales, come from the server code, since the database i
 If report_issue is available, it files issues on the app's own GitHub repo: feature ideas and bugs about
 this app, never training notes or personal data (the repo is public). Call list_issues first to avoid
 duplicates, and write the issue so a developer can act on it.`;
-
-const dateSchema = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$", description: "YYYY-MM-DD" };
-const SESSION_TYPES = ["boulder", "board", "lead", "hangboard", "strength", "cardio", "mobility", "other"];
-
-interface Tool {
-  name: string;
-  description: string;
-  inputSchema: Record<string, unknown>;
-  annotations?: Record<string, unknown>;
-  enabled?: (env: Env) => boolean; // hidden from tools/list when false
-  run: (args: any, env: Env) => Promise<unknown>;
-}
-
-async function today(env: Env, date?: string) {
-  if (date) return date;
-  const profile = await getProfile(env.DB);
-  return todayIn(profile.timezone);
-}
 
 function readOnlySql(sql: string): string {
   const s = sql.trim().replace(/;\s*$/, "");
@@ -93,7 +88,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_overview",
     description:
-      "Everything needed to recommend today's training: profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok), recent check-ins (sleep, feeling, alcohol, protein), sessions, hangboard logs, plan for the past N days and next 7, recent coach notes and benchmarks.",
+      "Everything needed to recommend today's training: warnings (data problems to sort out first, if any), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok), recent check-ins (sleep, feeling, alcohol, protein), sessions, hangboard logs, plan for the past N days and next 7, recent coach notes and benchmarks.",
     inputSchema: {
       type: "object",
       properties: {
@@ -102,7 +97,11 @@ const TOOLS: Tool[] = [
       },
     },
     annotations: { readOnlyHint: true },
-    run: async (a, env) => overview(env.DB, await today(env, a.date), a.days ?? 14),
+    run: async (a, env) => {
+      const o = await overview(env.DB, await today(env, a.date), a.days ?? 14);
+      const warnings = profileInjuryWarnings(o.profile, o.active_injuries.length);
+      return warnings.length ? { warnings, ...o } : o;
+    },
   },
   {
     name: "get_schema",
@@ -184,7 +183,8 @@ const TOOLS: Tool[] = [
   },
   {
     name: "log_session",
-    description: "Log a completed training session. Load is computed as duration_min * rpe.",
+    description:
+      "Log a completed training session. Load is computed as duration_min * rpe. To fix one that is already logged use update_session.",
     inputSchema: {
       type: "object",
       properties: {
@@ -201,24 +201,20 @@ const TOOLS: Tool[] = [
   },
   {
     name: "upsert_checkin",
-    description: "Create or overwrite the morning check-in for a date. Omitted fields are cleared.",
+    description:
+      "Create or correct the morning check-in for a date. Partial: only the fields you pass are changed, the others keep their value (null clears one), so a late correction like 'I also had 3 beers' doesn't wipe the sleep and feeling logged in the app. Returns the saved check-in.",
     inputSchema: {
       type: "object",
       properties: {
-        date: dateSchema,
-        sleep_hours: { type: "number" },
-        sleep_quality: { type: "integer", minimum: 1, maximum: 3 },
-        feeling: { type: "integer", minimum: 1, maximum: 5 },
-        drinks: { type: "integer", minimum: 0 },
-        protein: { type: "string", enum: ["low", "ok", "high"] },
-        weight_kg: { type: "number" },
-        note: { type: "string" },
+        date: { ...dateSchema, description: "The morning it is for (YYYY-MM-DD). Defaults to today in the climber's timezone; logging is often a day or two late, so pass it." },
+        ...schemaOf(CHECKIN_FIELDS),
       },
     },
+    annotations: { idempotentHint: true },
     run: async (a, env) => {
-      const date = await today(env, a.date);
-      await upsertCheckin(env.DB, date, a);
-      return { saved: date };
+      if (a.date !== undefined && !isIsoDate(a.date)) throw new Error("date must be YYYY-MM-DD");
+      const patch = checkinPatch(a);
+      return upsertCheckinPartial(env.DB, await today(env, a.date), patch);
     },
   },
   {
@@ -247,17 +243,21 @@ const TOOLS: Tool[] = [
   {
     name: "update_profile",
     description:
-      "Set facts about the climber used for planning, e.g. goal, trip_date, trip_details, level, weekly_availability, gym_setup, timezone. Set a value to null to remove it.",
+      "Set facts about the climber used for planning, e.g. goal, trip_date, trip_details, level, weekly_availability, gym_setup, timezone. Set a value to null to remove it. Not for injuries: injury keys (current_injury, injury, injuries, pain, ...) are not saved, use report_injury / add_injury_update / resolve_injury. Removing an old injury key (null) is allowed.",
     inputSchema: {
       type: "object",
       properties: { values: { type: "object", additionalProperties: { type: ["string", "null"] } } },
       required: ["values"],
     },
     run: async (a, env) => {
-      await updateProfile(env.DB, a.values);
-      return getProfile(env.DB);
+      if (typeof a.values !== "object" || a.values === null) throw new Error("values must be an object");
+      const { allowed, rejected } = splitProfileUpdate(a.values);
+      await updateProfile(env.DB, allowed);
+      const profile = await getProfile(env.DB);
+      return rejected.length ? { profile, warnings: [rejectedProfileWarning(rejected)] } : { profile };
     },
   },
+  ...WRITE_TOOLS,
   {
     name: "list_issues",
     description: "List issues on the app's GitHub repo (roadmap, ideas, bugs). Use before report_issue to avoid duplicates.",
