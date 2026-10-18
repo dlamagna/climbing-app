@@ -16,6 +16,84 @@ const preset: Preset = {
   notes: null,
 };
 
+// Compact view of a phase list: "kind:duration@set.rep".
+const shape = (p: Preset) => buildPhases(p).map((ph) => `${ph.kind}:${ph.duration}@${ph.set}.${ph.rep}`);
+
+describe("buildPhases", () => {
+  it("lays out prep, hangs, rests between reps and set rest only between sets", () => {
+    expect(shape(preset)).toEqual([
+      "prep:10@1.1",
+      "hang:10@1.1",
+      "rest:20@1.2",
+      "hang:10@1.2",
+      "rest:20@1.3",
+      "hang:10@1.3",
+      "setrest:60@2.1",
+      "hang:10@2.1",
+      "rest:20@2.2",
+      "hang:10@2.2",
+      "rest:20@2.3",
+      "hang:10@2.3",
+    ]);
+  });
+
+  it("ends on the last hang: no trailing rest or set rest", () => {
+    const phases = buildPhases(preset);
+    expect(phases.at(-1)).toEqual({ kind: "hang", duration: 10, set: 2, rep: 3 });
+    expect(phases.filter((ph) => ph.kind === "setrest")).toHaveLength(preset.sets - 1);
+    expect(phases.filter((ph) => ph.kind === "rest")).toHaveLength(preset.sets * (preset.reps - 1));
+  });
+
+  it("labels a rest with the rep it leads into and a set rest with the set it leads into", () => {
+    const phases = buildPhases(preset);
+    const before = (i: number) => phases[i - 1]; // prep, rest or set rest
+    phases.forEach((ph, i) => {
+      if (ph.kind !== "hang" || i === 0) return;
+      expect([before(i).set, before(i).rep]).toEqual([ph.set, ph.rep]);
+    });
+  });
+
+  it("skips the prep phase when prep_s is 0", () => {
+    const phases = buildPhases({ ...preset, prep_s: 0 });
+    expect(phases[0]).toEqual({ kind: "hang", duration: 10, set: 1, rep: 1 });
+    expect(phases.some((ph) => ph.kind === "prep")).toBe(false);
+  });
+
+  it("puts hangs back to back when off_s is 0, still with set rest between sets", () => {
+    expect(shape({ ...preset, prep_s: 0, off_s: 0 })).toEqual([
+      "hang:10@1.1",
+      "hang:10@1.2",
+      "hang:10@1.3",
+      "setrest:60@2.1",
+      "hang:10@2.1",
+      "hang:10@2.2",
+      "hang:10@2.3",
+    ]);
+  });
+
+  it("has no set rest with a single set, or when set_rest_s is 0", () => {
+    expect(shape({ ...preset, prep_s: 0, sets: 1 })).toEqual(["hang:10@1.1", "rest:20@1.2", "hang:10@1.2", "rest:20@1.3", "hang:10@1.3"]);
+    expect(buildPhases({ ...preset, set_rest_s: 0 }).some((ph) => ph.kind === "setrest")).toBe(false);
+  });
+
+  it("goes straight from hang to set rest with one rep per set", () => {
+    expect(shape({ ...preset, reps: 1, sets: 3, set_rest_s: 120 })).toEqual([
+      "prep:10@1.1",
+      "hang:10@1.1",
+      "setrest:120@2.1",
+      "hang:10@2.1",
+      "setrest:120@3.1",
+      "hang:10@3.1",
+    ]);
+  });
+
+  it("totalSeconds is the sum of every phase", () => {
+    // 10 prep + 6 hangs x 10 + 4 rests x 20 + 1 set rest x 60
+    expect(totalSeconds(preset)).toBe(10 + 60 + 80 + 60);
+    expect(totalSeconds({ ...preset, prep_s: 0, off_s: 0, sets: 1 })).toBe(30);
+  });
+});
+
 describe("activeSeconds", () => {
   const phases = buildPhases(preset);
 
