@@ -177,3 +177,6 @@ export const SESSION_TYPES = [
 ];
 
 export const typeLabel = (t: string | null) => SESSION_TYPES.find((s) => s.value === t)?.label ?? t ?? "";
+
+// Groups for the History calendar and mix (rope / boulder / fingers / other); defined once in worker/typeGroups.ts.
+export { TYPE_GROUPS, type GroupKey, groupOf, groupInfo } from "../worker/typeGroups";
