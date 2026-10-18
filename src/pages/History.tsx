@@ -5,6 +5,7 @@ import { Card, OverflowMenu, PageHeader } from "../components/ui";
 import { addDays, dayLabel, localToday, prettyDate } from "../dates";
 import { type HistoryView, type WeekLoad, typeLabel } from "../types";
 import { FEELING, SLEEP_QUALITY } from "./Today";
+import { baselineNote } from "../progress";
 
 export default function History() {
   const today = localToday();
@@ -28,7 +29,7 @@ export default function History() {
     <div className="page">
       <PageHeader title="History" sub="Last 8 weeks · ⋯ to edit or delete an entry" />
       <Card title="Weekly training load">
-        <LoadChart weeks={data.load.weeks} />
+        <LoadChart weeks={data.load.weeks} baseline={baselineNote(data.load)} />
       </Card>
 
       {dates.length === 0 && <p className="muted">Nothing logged yet.</p>}
@@ -98,7 +99,7 @@ export default function History() {
 
 // Stacked bars per week: finger load (bottom) + everything else (top). Tap a week for its numbers.
 // The bars split the raw total; the detail line also gives the weighted finger load (type and style tags) when it differs.
-function LoadChart({ weeks }: { weeks: WeekLoad[] }) {
+function LoadChart({ weeks, baseline }: { weeks: WeekLoad[]; baseline?: string | null }) {
   const [picked, setPicked] = useState(weeks.length - 1);
   const max = Math.max(1, ...weeks.map((w) => w.total));
   const w = weeks[picked];
@@ -113,6 +114,7 @@ function LoadChart({ weeks }: { weeks: WeekLoad[] }) {
           <i className="swatch other" /> Other
         </span>
       </div>
+      {baseline && <p className="muted small load-baseline">{baseline}</p>}
       <div className="bars" role="list">
         {weeks.map((wk, i) => {
           const other = wk.total - wk.finger_raw;

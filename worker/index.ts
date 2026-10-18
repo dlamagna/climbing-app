@@ -136,6 +136,16 @@ api.get("/history", async (c) => {
   return c.json({ ...h, load });
 });
 
+// Weigh-ins from check-ins over a range, oldest first (bodyweight chart on the Benchmarks page).
+api.get("/weights", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    "SELECT date, weight_kg FROM checkins WHERE weight_kg IS NOT NULL AND date BETWEEN ? AND ? ORDER BY date",
+  )
+    .bind(dateParam(c, "from"), dateParam(c, "to"))
+    .all();
+  return c.json(results);
+});
+
 api.get("/checkins/:date", async (c) => {
   const row = await c.env.DB.prepare("SELECT * FROM checkins WHERE date = ?").bind(dateParam(c, "date")).first();
   return row ? c.json(row) : c.json({ error: "Check-in not found" }, 404);
