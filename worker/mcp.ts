@@ -83,7 +83,18 @@ plan itself). Fill duration_min in set_plan when the session length matters, so 
 
 Use set_plan to write or rewrite the plan (one or more entries per date; existing entries on those dates are
 replaced, which also drops their status overrides and the sessions pinned to them; statuses are then derived
-again against the new entries, so already-logged days keep showing what happened). Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first: its column
+again against the new entries, so already-logged days keep showing what happened).
+
+When a planned day includes tests (max pull-ups, max hang, plank, hardest flash, a timed run...), put them
+in that entry's expected_benchmarks as {name, unit}, not only in details: the app then shows an input per
+test when the climber logs that day's session, the results land in benchmarks, and the entry counts as a
+test day for plan_conflicts. Reuse an existing name and unit exactly (get_overview's benchmark_names lists
+those already in use) so results line up over time; for a new test pick a short, specific name ('Max hang
+20mm 10s', 'Max pull-ups') and a unit you will keep using ('kg added', 'reps', 's', 'min:s', 'grade').
+get_overview's missing_benchmarks_last_7_days lists planned tests from the last 7 days with no result yet (a
+result logged on a later day counts as done): offer to reschedule them into an upcoming day with set_plan.
+
+Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first: its column
 comments, with units and scales, come from the server code, since the database itself keeps none).
 
 If report_issue is available, it files issues on the app's own GitHub repo: feature ideas and bugs about
@@ -104,7 +115,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_overview",
     description:
-      "Everything needed to recommend today's training: warnings (data problems to sort out first, if any), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok), recent check-ins (sleep, feeling, alcohol, protein), sessions, hangboard logs, plan for the past N days and next 7 (each entry with status), plan adherence per day, week-so-far counts, plan_conflicts, recent coach notes and benchmarks.",
+      "Everything needed to recommend today's training: warnings (data problems to sort out first, if any), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok), recent check-ins (sleep, feeling, alcohol, protein), sessions, hangboard logs, plan for the past N days and next 7 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, and missing_benchmarks_last_7_days (planned tests with no result yet).",
     inputSchema: {
       type: "object",
       properties: {
@@ -149,7 +160,7 @@ const TOOLS: Tool[] = [
   {
     name: "set_plan",
     description:
-      "Write planned sessions. Existing plan entries on the dates you include are replaced (unless replace_dates is false). Use type 'rest' with intensity 'rest' for rest days.",
+      "Write planned sessions. Existing plan entries on the dates you include are replaced (unless replace_dates is false). Use type 'rest' with intensity 'rest' for rest days. Put any tests planned for a day in expected_benchmarks, reusing names and units from get_overview's benchmark_names.",
     inputSchema: {
       type: "object",
       properties: {
@@ -164,6 +175,20 @@ const TOOLS: Tool[] = [
               intensity: { type: "string", enum: ["rest", "easy", "moderate", "hard"] },
               details: { type: "string", description: "The actual workout: warm-up, sets, grades, times" },
               duration_min: { type: "integer", minimum: 1, description: "Planned length; a much shorter session counts as partial" },
+              expected_benchmarks: {
+                type: "array",
+                maxItems: 10,
+                description:
+                  "Tests to do that day; the app asks for each result when the session is logged. Reuse existing benchmark names/units exactly.",
+                items: {
+                  type: "object",
+                  properties: {
+                    name: { type: "string", description: "e.g. 'Max pull-ups', 'Max hang 20mm 10s'" },
+                    unit: { type: "string", description: "e.g. 'reps', 'kg added', 's', 'grade'" },
+                  },
+                  required: ["name", "unit"],
+                },
+              },
             },
             required: ["date", "title"],
           },

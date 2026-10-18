@@ -1,5 +1,13 @@
 // Data access shared by the phone app's REST API and the MCP server.
 
+import {
+  type BenchmarkResult,
+  type ExpectedBenchmark,
+  decodeExpected,
+  encodeExpected,
+  missingBenchmarks,
+  parseExpectedBenchmarks,
+} from "./benchmarks";
 import { CHECKIN_COLUMNS, checkinUpsertSql } from "./checkins";
 import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, mondayOf, type LoadRow } from "./load";
 import { allColumns } from "./partial";
@@ -120,6 +128,7 @@ export interface PlanEntry {
   intensity?: string | null;
   details?: string | null;
   duration_min?: number | null;
+  expected_benchmarks?: ExpectedBenchmark[] | null; // tests planned that day, see worker/benchmarks.ts
 }
 
 // Writes plan entries. With replaceDates, existing entries on those dates are removed first,
@@ -127,12 +136,13 @@ export interface PlanEntry {
 // with them; statuses are re-derived against the new entries).
 export async function setPlan(db: D1Database, entries: PlanEntry[], replaceDates: boolean) {
   const dates = [...new Set(entries.map((e) => e.date))];
+  const expected = entries.map((e) => encodeExpected(parseExpectedBenchmarks(e.expected_benchmarks)));
   const stmts = [
     ...(replaceDates ? dates.map((d) => db.prepare("DELETE FROM plan WHERE date = ?").bind(d)) : []),
-    ...entries.map((e) =>
+    ...entries.map((e, i) =>
       db
-        .prepare("INSERT INTO plan (date, title, type, intensity, details, duration_min) VALUES (?, ?, ?, ?, ?, ?)")
-        .bind(e.date, e.title, e.type ?? null, e.intensity ?? null, e.details ?? null, e.duration_min ?? null),
+        .prepare("INSERT INTO plan (date, title, type, intensity, details, duration_min, expected_benchmarks) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        .bind(e.date, e.title, e.type ?? null, e.intensity ?? null, e.details ?? null, e.duration_min ?? null, expected[i]),
     ),
   ];
   if (stmts.length) await db.batch(stmts);
@@ -141,13 +151,16 @@ export async function setPlan(db: D1Database, entries: PlanEntry[], replaceDates
 const minDate = (a: string, b: string) => (a < b ? a : b);
 const maxDate = (a: string, b: string) => (a > b ? a : b);
 
-// Plan entries from..to with their derived status and conflict flags (worker/plan.ts). Reads a wider window
-// so conflicts see the last week and the next planned days whatever range the caller asked for.
+// Plan entries from..to with their derived status and conflict flags (worker/plan.ts), and expected_benchmarks
+// as a list ([] when none) rather than the stored JSON. Reads a wider window so conflicts see the last week
+// and the next planned days whatever range the caller asked for.
 export async function getPlan(db: D1Database, from: string, to: string, today: string) {
   const lo = minDate(from, addDays(today, -7));
   const hi = maxDate(to, addDays(today, 14));
   const [entries, sessions] = await Promise.all([
-    all<PlanRow & Row>(db, "SELECT * FROM plan WHERE date BETWEEN ? AND ? ORDER BY date, id", lo, hi),
+    all<PlanRow & Row>(db, "SELECT * FROM plan WHERE date BETWEEN ? AND ? ORDER BY date, id", lo, hi).then((rows) =>
+      rows.map((r) => ({ ...r, expected_benchmarks: decodeExpected(r.expected_benchmarks) })),
+    ),
     all<SessionRow>(
       db,
       `SELECT id, date, type, duration_min, rpe, plan_id FROM sessions
@@ -168,6 +181,29 @@ export async function getPlan(db: D1Database, from: string, to: string, today: s
 export async function setPlanStatus(db: D1Database, id: number, status: PlanStatus | null): Promise<boolean> {
   const { meta } = await db.prepare("UPDATE plan SET status_override = ? WHERE id = ?").bind(status, id).run();
   return meta.changes > 0;
+}
+
+// Benchmark results entered with a session: upserted per (session, name) with the session's date, cleared
+// ones removed. (Editing a session's date moves its results too, see updateSessionFields.)
+export function sessionBenchmarkStmts(
+  db: D1Database,
+  sessionId: number,
+  date: string,
+  writes: { save: BenchmarkResult[]; clear: string[] },
+) {
+  return [
+    ...writes.clear.map((name) =>
+      db.prepare("DELETE FROM benchmarks WHERE session_id = ? AND name = ?").bind(sessionId, name),
+    ),
+    ...writes.save.map((b) =>
+      db
+        .prepare(
+          `INSERT INTO benchmarks (date, name, value, unit, session_id) VALUES (?, ?, ?, ?, ?)
+           ON CONFLICT (session_id, name) DO UPDATE SET date = excluded.date, value = excluded.value, unit = excluded.unit`,
+        )
+        .bind(date, b.name, b.value, b.unit, sessionId),
+    ),
+  ];
 }
 
 export async function addCoachNote(db: D1Database, date: string, text: string): Promise<number> {
@@ -237,7 +273,7 @@ export async function todayView(db: D1Database, today: string) {
 // Everything Claude needs to answer "how should I train today?" in one call.
 export async function overview(db: D1Database, today: string, days: number) {
   const from = addDays(today, -(days - 1));
-  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved] = await Promise.all([
+  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests] = await Promise.all([
     getProfile(db),
     activeInjuries(db),
     loadStats(db, today, 6),
@@ -246,6 +282,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     all(db, "SELECT date, text FROM coach_notes ORDER BY date DESC, id DESC LIMIT 5"),
     all(db, "SELECT date, name, value, unit, notes FROM benchmarks ORDER BY date DESC LIMIT 30"),
     all(db, "SELECT body_part, side, started_on, resolved_on FROM injuries WHERE resolved_on IS NOT NULL ORDER BY resolved_on DESC LIMIT 5"),
+    benchmarkOverview(db, today),
   ]);
   return {
     today,
@@ -263,5 +300,22 @@ export async function overview(db: D1Database, today: string, days: number) {
     plan_conflicts: plan.conflicts,
     recent_coach_notes: coachNotes,
     benchmarks,
+    ...tests,
   };
+}
+
+// Benchmark names already in use (so planned tests reuse them and charts line up) and planned tests from
+// the last 7 days that have no result yet (so the coach can reschedule them).
+async function benchmarkOverview(db: D1Database, today: string) {
+  const [names, plan, logged] = await Promise.all([
+    all(db, "SELECT name, unit, COUNT(*) AS results, MAX(date) AS last_date FROM benchmarks GROUP BY name, unit ORDER BY name"),
+    all<{ date: string; title: string; expected_benchmarks: string }>(
+      db,
+      "SELECT date, title, expected_benchmarks FROM plan WHERE date BETWEEN ? AND ? AND expected_benchmarks IS NOT NULL",
+      addDays(today, -7),
+      addDays(today, -1),
+    ).then((rows) => rows.map((r) => ({ ...r, expected_benchmarks: decodeExpected(r.expected_benchmarks) }))),
+    all<{ date: string; name: string }>(db, "SELECT date, name FROM benchmarks WHERE date BETWEEN ? AND ?", addDays(today, -7), today),
+  ]);
+  return { benchmark_names: names, missing_benchmarks_last_7_days: missingBenchmarks(plan, logged, today, 7) };
 }

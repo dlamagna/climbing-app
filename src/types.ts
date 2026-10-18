@@ -22,6 +22,18 @@ export interface Session {
   max_grade: string | null;
   notes: string | null;
   updated_at?: string | null; // set once edited
+  benchmarks?: SessionBenchmark[]; // results entered with it (GET /sessions/:id only)
+}
+
+export interface ExpectedBenchmark {
+  name: string;
+  unit: string;
+}
+
+export interface SessionBenchmark {
+  name: string;
+  value: string;
+  unit: string | null;
 }
 
 export interface HangLog {
@@ -94,6 +106,7 @@ export interface PlanEntry {
   status_override?: PlanStatus | null;
   session_id?: number | null;
   flags?: PlanConflict[];
+  expected_benchmarks?: ExpectedBenchmark[]; // tests planned that day ([] when none)
 }
 
 export interface CoachNote {

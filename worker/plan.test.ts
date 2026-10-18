@@ -275,6 +275,14 @@ describe("planConflicts", () => {
     ]);
   });
 
+  it("an entry with expected benchmarks is a test day whatever its title (#22)", () => {
+    const tests = entry(MON, "cardio", { title: "Easy run", expected_benchmarks: [{ name: "5 km run" }] });
+    const plain = entry(TUE, "cardio", { title: "Easy run", expected_benchmarks: [] });
+    const next = entry(THU, "boulder");
+    const cs = conflicts([tests, plain, next], [], WED);
+    expect(cs.map((c) => [c.kind, c.entry_id])).toEqual([["key_session_missed", tests.id]]);
+  });
+
   it("an override to done clears the missed-strength conflict; a late log does too", () => {
     const strength = entry(MON, "strength");
     expect(conflicts([{ ...strength, status_override: "done" }, entry(THU, "boulder")], [], WED)).toEqual([]);
