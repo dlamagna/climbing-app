@@ -145,6 +145,68 @@ describe("computeLoadStats cold start", () => {
   });
 });
 
+describe("computeLoadStats 7-day vs previous-28-day windows", () => {
+  it("puts 0-6 days ago in the last 7 days and 7-34 days ago in the previous 28", () => {
+    const rows = [
+      s(0, "strength", 1), // acute, today
+      s(6, "strength", 2), // acute, oldest day
+      s(7, "strength", 40), // chronic, newest day
+      s(34, "strength", 80), // chronic, oldest day
+      s(35, "strength", 9999), // outside both
+    ];
+    const r = computeLoadStats(rows, TODAY, ago(60), 4);
+    expect(r.last7.total).toBe(3);
+    expect(r.prev28_weekly_avg.total).toBe(30); // (40 + 80) / 4
+  });
+
+  it("windows span month and year boundaries", () => {
+    // Today is Tue 2 March 2027: the last 7 days start on 24 Feb, the previous 28 run 27 Jan - 23 Feb.
+    const today = "2027-03-02";
+    const rows: LoadRow[] = [
+      { date: "2027-02-24", type: "boulder", load: 70 }, // acute, first day
+      { date: "2027-02-23", type: "boulder", load: 100 }, // chronic, last day
+      { date: "2027-01-27", type: "boulder", load: 100 }, // chronic, first day
+      { date: "2027-01-26", type: "boulder", load: 5000 }, // outside
+    ];
+    const r = computeLoadStats(rows, today, "2026-12-01", 4);
+    expect(r.last7.total).toBe(70);
+    expect(r.prev28_weekly_avg.total).toBe(50);
+    expect(r.ratio_total).toBe(1.4);
+
+    // Today is Sat 2 Jan 2027: the previous 28 days reach back into November 2026.
+    const r2 = computeLoadStats(
+      [
+        { date: "2026-12-27", type: "lead", load: 100 }, // acute (27 Dec - 2 Jan)
+        { date: "2026-11-29", type: "lead", load: 200 }, // chronic, first day (29 Nov - 26 Dec)
+        { date: "2026-11-28", type: "lead", load: 5000 }, // outside
+      ],
+      "2027-01-02",
+      "2026-10-01",
+      4,
+    );
+    expect(r2.last7).toEqual({ total: 100, finger: 70, finger_raw: 100 }); // lead x0.7
+    expect(r2.prev28_weekly_avg).toEqual({ total: 50, finger: 35, finger_raw: 50 });
+  });
+
+  it("buckets weeks across a month boundary and in a leap-year February", () => {
+    const r = computeLoadStats(
+      [
+        { date: "2028-02-27", type: "board", load: 10 }, // Sunday, week of 21 Feb
+        { date: "2028-02-28", type: "board", load: 20 }, // Monday
+        { date: "2028-02-29", type: "board", load: 30 }, // leap day
+        { date: "2028-03-01", type: "board", load: 40 }, // Wednesday, today
+      ],
+      "2028-03-01",
+      "2027-12-01",
+      2,
+    );
+    expect(r.weeks.map((w) => [w.week_start, w.total, w.sessions])).toEqual([
+      ["2028-02-21", 10, 1],
+      ["2028-02-28", 90, 3],
+    ]);
+  });
+});
+
 describe("computeLoadStats finger vs total load", () => {
   it("counts boulder, board, lead and hangboard as finger load only, weighted by type", () => {
     const rows = [
