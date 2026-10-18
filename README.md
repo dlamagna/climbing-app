@@ -94,7 +94,7 @@ Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:loc
 | `worker/index.ts` | REST API for the app (bearer `APP_TOKEN`) and MCP routing (`MCP_TOKEN`) |
 | `worker/mcp.ts` | MCP server: tools, plus instructions telling Claude how to coach from the data |
 | `worker/db.ts` | Queries shared by both, including training-load maths |
-| `migrations/` | Schema (column comments are what Claude sees via `get_schema`) and default timer presets |
+| `migrations/` | Schema and default timer presets (D1 strips SQL comments; column docs for `get_schema` live in `worker/schema-docs.ts`) |
 | `src/pages/` | Today, Log, Timer, History, Plan, Injuries, Benchmarks, Settings |
 | `src/timer.ts` | Hangboard phase sequencing, beeps, screen wake lock |
 
