@@ -1,5 +1,7 @@
 // Training load arithmetic, kept free of D1 so it can be unit tested (see load.test.ts).
 
+import { fingerWeight } from "./tags";
+
 // Session types that load the fingers; tracked separately because tendons adapt slower than muscle.
 export const FINGER_TYPES = ["boulder", "board", "lead", "hangboard"];
 
@@ -23,12 +25,14 @@ export interface LoadRow {
   date: string;
   type: string;
   load: number; // duration_min * rpe
+  tags?: string | null; // sessions.tags as stored; weights finger load, see worker/tags.ts
 }
 
 export interface WeekLoad {
   week_start: string;
   total: number;
-  finger: number;
+  finger: number; // weighted by type and style tags
+  finger_raw: number; // unweighted
   sessions: number;
 }
 
@@ -57,13 +61,19 @@ export function loadWindow(today: string, weeks: number) {
 // days before logging began. Under 14 days of history there is no ratio ("building"); from 14 to 27
 // the ratio is shown but marked provisional ("partial"); from 28 it is trusted ("ok"). With 35+
 // days the whole chronic window exists and this is the plain sum / 4.
+//
+// Finger load: `finger` multiplies each finger session's load by its type x style-tag weight (fingerWeight in
+// worker/tags.ts) and drives ratio_finger; `finger_raw` is the plain unweighted sum.
 export function computeLoadStats(rows: LoadRow[], today: string, firstSessionDate: string | null, weeks = 6) {
   const from = firstWeekStart(today, weeks);
 
-  const sum = (lo: string, hi: string, fingerOnly: boolean) =>
-    rows
-      .filter((r) => r.date >= lo && r.date <= hi && (!fingerOnly || FINGER_TYPES.includes(r.type)))
-      .reduce((acc, r) => acc + r.load, 0);
+  type Kind = "total" | "finger" | "finger_raw";
+  const value = (r: LoadRow, kind: Kind) =>
+    kind === "total" ? r.load : !FINGER_TYPES.includes(r.type) ? 0 : kind === "finger_raw" ? r.load : r.load * fingerWeight(r.type, r.tags);
+  // Unrounded, so weighted averages are rounded once at the end.
+  const rawSum = (lo: string, hi: string, kind: Kind) =>
+    rows.filter((r) => r.date >= lo && r.date <= hi).reduce((acc, r) => acc + value(r, kind), 0);
+  const sum = (lo: string, hi: string, kind: Kind) => Math.round(rawSum(lo, hi, kind));
 
   const historyDays = firstSessionDate ? Math.max(0, daysBetween(firstSessionDate, today) + 1) : 0;
   const status: BaselineStatus =
@@ -73,11 +83,15 @@ export function computeLoadStats(rows: LoadRow[], today: string, firstSessionDat
   const chronicTo = addDays(today, -ACUTE_DAYS);
   const chronicDays = Math.min(CHRONIC_DAYS, Math.max(0, historyDays - ACUTE_DAYS));
   const chronicFrom = addDays(chronicTo, -(chronicDays - 1));
-  const weekly = (fingerOnly: boolean) =>
-    chronicDays > 0 ? Math.round((sum(chronicFrom, chronicTo, fingerOnly) / chronicDays) * 7) : 0;
+  const weekly = (kind: Kind) =>
+    chronicDays > 0 ? Math.round((rawSum(chronicFrom, chronicTo, kind) / chronicDays) * 7) : 0;
 
-  const last7 = { total: sum(acuteFrom, today, false), finger: sum(acuteFrom, today, true) };
-  const prevWeeklyAvg = { total: weekly(false), finger: weekly(true) };
+  const last7 = {
+    total: sum(acuteFrom, today, "total"),
+    finger: sum(acuteFrom, today, "finger"),
+    finger_raw: sum(acuteFrom, today, "finger_raw"),
+  };
+  const prevWeeklyAvg = { total: weekly("total"), finger: weekly("finger"), finger_raw: weekly("finger_raw") };
   const ratio = (a: number, b: number) =>
     status !== "building" && b > 0 ? Math.round((a / b) * 100) / 100 : null;
 
@@ -87,8 +101,9 @@ export function computeLoadStats(rows: LoadRow[], today: string, firstSessionDat
     const end = addDays(start, 6);
     byWeek.push({
       week_start: start,
-      total: sum(start, end, false),
-      finger: sum(start, end, true),
+      total: sum(start, end, "total"),
+      finger: sum(start, end, "finger"),
+      finger_raw: sum(start, end, "finger_raw"),
       sessions: rows.filter((r) => r.date >= start && r.date <= end).length,
     });
   }

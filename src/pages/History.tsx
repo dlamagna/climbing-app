@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { savedToast, send, useApi } from "../api";
+import { TagList } from "../components/TagPicker";
 import { Card, OverflowMenu, PageHeader } from "../components/ui";
 import { addDays, dayLabel, localToday, prettyDate } from "../dates";
 import { type HistoryView, type WeekLoad, typeLabel } from "../types";
@@ -60,6 +61,7 @@ export default function History() {
                 <a className="entry-link" href={`#/log?edit=${s.id}`} aria-label={`Edit ${typeLabel(s.type)} session`}>
                   <strong>{typeLabel(s.type)}</strong> {s.duration_min} min · effort {s.rpe}
                   {s.max_grade && ` · ${s.max_grade}`}
+                  <TagList tags={s.tags} />
                   <span className="muted"> · load {s.duration_min * s.rpe}</span>
                   {s.updated_at && <span className="muted small"> · edited</span>}
                   {s.notes && <div className="muted small prewrap">{s.notes}</div>}
@@ -95,6 +97,7 @@ export default function History() {
 }
 
 // Stacked bars per week: finger load (bottom) + everything else (top). Tap a week for its numbers.
+// The bars split the raw total; the detail line also gives the weighted finger load (type and style tags) when it differs.
 function LoadChart({ weeks }: { weeks: WeekLoad[] }) {
   const [picked, setPicked] = useState(weeks.length - 1);
   const max = Math.max(1, ...weeks.map((w) => w.total));
@@ -112,19 +115,19 @@ function LoadChart({ weeks }: { weeks: WeekLoad[] }) {
       </div>
       <div className="bars" role="list">
         {weeks.map((wk, i) => {
-          const other = wk.total - wk.finger;
+          const other = wk.total - wk.finger_raw;
           return (
             <button
               key={wk.week_start}
               role="listitem"
               className={i === picked ? "bar-col picked" : "bar-col"}
-              aria-label={`Week of ${prettyDate(wk.week_start)}: ${wk.total} total, ${wk.finger} fingers`}
+              aria-label={`Week of ${prettyDate(wk.week_start)}: ${wk.total} total, ${wk.finger_raw} fingers`}
               onClick={() => setPicked(i)}
             >
               <span className="bar-total">{wk.total || ""}</span>
               <span className="bar-stack" style={{ height: `calc(${wk.total / max} * (100% - 18px))` }}>
                 {other > 0 && <span className="seg other" style={{ flexGrow: other }} />}
-                {wk.finger > 0 && <span className="seg finger" style={{ flexGrow: wk.finger }} />}
+                {wk.finger_raw > 0 && <span className="seg finger" style={{ flexGrow: wk.finger_raw }} />}
               </span>
               <span className="bar-label">{wk.week_start.slice(8)}/{wk.week_start.slice(5, 7)}</span>
             </button>
@@ -133,7 +136,8 @@ function LoadChart({ weeks }: { weeks: WeekLoad[] }) {
       </div>
       {w && (
         <p className="small viz-detail">
-          Week of {prettyDate(w.week_start)}: <strong>{w.total}</strong> total · {w.finger} fingers · {w.sessions} sessions
+          Week of {prettyDate(w.week_start)}: <strong>{w.total}</strong> total · {w.finger_raw} fingers
+          {w.finger !== w.finger_raw && ` (${w.finger} weighted)`} · {w.sessions} sessions
         </p>
       )}
     </div>

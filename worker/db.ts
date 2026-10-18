@@ -94,16 +94,17 @@ export interface Session {
   max_grade?: string | null;
   notes?: string | null;
   plan_id?: number | null; // pinned link to a plan entry (see worker/plan.ts); NULL = auto-matched
+  tags?: string | null; // column value: comma-separated, see worker/tags.ts
 }
 
 // clientId makes the insert idempotent: replaying the same write returns the original row's id.
 export async function insertSession(db: D1Database, s: Session, clientId: string | null = null): Promise<number> {
   const row = await db
     .prepare(
-      `INSERT INTO sessions (date, type, duration_min, rpe, max_grade, notes, plan_id, client_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
+      `INSERT INTO sessions (date, type, duration_min, rpe, max_grade, notes, plan_id, tags, client_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
     )
-    .bind(s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null, s.plan_id ?? null, clientId)
+    .bind(s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null, s.plan_id ?? null, s.tags ?? null, clientId)
     .first<{ id: number }>();
   return row?.id ?? (await idForClientId(db, "sessions", clientId!));
 }
@@ -242,7 +243,7 @@ export async function activeInjuries(db: D1Database) {
 export async function loadStats(db: D1Database, today: string, weeks = 6) {
   const { from, to } = loadWindow(today, weeks);
   const [rows, first] = await Promise.all([
-    all<LoadRow>(db, "SELECT date, type, duration_min * rpe AS load FROM sessions WHERE date BETWEEN ? AND ?", from, to),
+    all<LoadRow>(db, "SELECT date, type, duration_min * rpe AS load, tags FROM sessions WHERE date BETWEEN ? AND ?", from, to),
     db.prepare("SELECT MIN(date) AS first FROM sessions WHERE date <= ?").bind(today).first<{ first: string | null }>(),
   ]);
   return computeLoadStats(rows, today, first?.first ?? null, weeks);
