@@ -4,10 +4,12 @@ import { benchmarkBody } from "../benchmarkInputs";
 import { type InjuryDraft, EMPTY_DRAFT, QuickInjury, draftBody } from "../components/injury";
 import { BenchmarkFields, useBenchmarkInputs } from "../components/plannedBenchmarks";
 import { NoteSuggestions } from "../components/noteSuggestions";
+import { TagPicker, takesTags } from "../components/TagPicker";
 import { Chips, DatePicker, Field, PageHeader, Stepper, range } from "../components/ui";
 import { localToday } from "../dates";
 import { type NoteSuggestions as Suggestions, noteSuggestions } from "../painWords";
 import { type Injury, SESSION_TYPES, type Session } from "../types";
+import { type SessionTag, parseTags } from "../../worker/tags";
 
 export const EFFORT_HINT: Record<number, string> = {
   1: "barely anything",
@@ -47,6 +49,7 @@ function SessionForm({ session }: { session: Session | null }) {
   const [rpe, setRpe] = useState<number | null>(session?.rpe ?? null);
   const [grade, setGrade] = useState(session?.max_grade ?? "");
   const [notes, setNotes] = useState(session?.notes ?? "");
+  const [tags, setTags] = useState<SessionTag[]>(parseTags(session?.tags));
   const [injury, setInjury] = useState<InjuryDraft | null>(null);
   const [linked, setLinked] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -78,6 +81,7 @@ function SessionForm({ session }: { session: Session | null }) {
         rpe,
         max_grade: grade.trim() || null,
         notes: notes.trim() || null,
+        tags: takesTags(type) ? tags : [], // kept while switching types, only sent for climbing ones
         new_injury: injury && { ...draftBody(injury), link: linked },
         benchmarks: benchmarkBody(tests.inputs),
       };
@@ -113,6 +117,7 @@ function SessionForm({ session }: { session: Session | null }) {
         <Field label="What">
           <Chips wrap options={SESSION_TYPES} value={type} onChange={setType} />
         </Field>
+        {takesTags(type) && <TagPicker value={tags} onChange={setTags} />}
         <Field label="How long">
           <div className="row">
             <Stepper value={duration} step={15} min={5} max={360} format={(v) => `${v} min`} onChange={setDuration} />

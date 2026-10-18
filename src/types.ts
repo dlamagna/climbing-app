@@ -21,6 +21,7 @@ export interface Session {
   rpe: number;
   max_grade: string | null;
   notes: string | null;
+  tags?: string | null; // comma-separated style tags, see worker/tags.ts
   updated_at?: string | null; // set once edited
   benchmarks?: SessionBenchmark[]; // results entered with it (GET /sessions/:id only)
 }
@@ -118,13 +119,14 @@ export interface CoachNote {
 export interface WeekLoad {
   week_start: string;
   total: number;
-  finger: number;
+  finger: number; // weighted by type and style tags
+  finger_raw: number; // unweighted
   sessions: number;
 }
 
 export interface LoadStats {
-  last7: { total: number; finger: number };
-  prev28_weekly_avg: { total: number; finger: number };
+  last7: { total: number; finger: number; finger_raw: number };
+  prev28_weekly_avg: { total: number; finger: number; finger_raw: number };
   ratio_total: number | null;
   ratio_finger: number | null;
   history_days: number; // days from the first logged session to today, inclusive

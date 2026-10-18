@@ -17,7 +17,7 @@ import {
 import { type Tool, dateSchema, todayFor } from "./mcp-common";
 import { NotFound } from "./errors";
 import { schemaOf } from "./partial";
-import { SESSION_FIELDS, deleteSession, sessionId, sessionPatch, updateSessionFields } from "./sessions";
+import { SESSION_FIELDS, checkedSessionPatch, deleteSession, sessionId, updateSessionFields } from "./sessions";
 
 const nullableDate = { type: ["string", "null"], pattern: dateSchema.pattern };
 
@@ -105,7 +105,7 @@ export const WRITE_TOOLS: Tool[] = [
   {
     name: "update_session",
     description:
-      "Fix a logged session by id (ids are in get_overview's sessions). Only the fields you pass change; null clears max_grade or notes (notes are replaced as a whole). Load is recomputed from duration_min * rpe. A new date also moves the benchmark results logged with it. Returns the updated session.",
+      "Fix a logged session by id (ids are in get_overview's sessions). Only the fields you pass change; null clears max_grade, notes or tags (notes and tags are replaced as a whole; tags only on boulder/board/lead, and changing a tagged session to another type clears them). Load is recomputed from duration_min * rpe. A new date also moves the benchmark results logged with it. Returns the updated session.",
     inputSchema: {
       type: "object",
       properties: { id: { type: "integer" }, ...schemaOf(SESSION_FIELDS) },
@@ -114,7 +114,7 @@ export const WRITE_TOOLS: Tool[] = [
     annotations: { destructiveHint: true, idempotentHint: true },
     run: async (a, env) => {
       const id = sessionId(a.id);
-      const row = await updateSessionFields(env.DB, id, sessionPatch(a));
+      const row = await updateSessionFields(env.DB, id, await checkedSessionPatch(env.DB, id, a));
       if (!row) throw new NotFound(`Session ${id} not found`);
       return row;
     },
