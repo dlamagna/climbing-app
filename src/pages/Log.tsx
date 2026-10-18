@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { isQueued, savedToast, send, useApi } from "../api";
+import { benchmarkBody } from "../benchmarkInputs";
 import { type InjuryDraft, EMPTY_DRAFT, QuickInjury, draftBody } from "../components/injury";
+import { BenchmarkFields, useBenchmarkInputs } from "../components/plannedBenchmarks";
 import { NoteSuggestions } from "../components/noteSuggestions";
 import { Chips, DatePicker, Field, PageHeader, Stepper, range } from "../components/ui";
 import { localToday } from "../dates";
@@ -50,6 +52,7 @@ function SessionForm({ session }: { session: Session | null }) {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState<{ suggestions: Suggestions<Injury>; sessionId: number | null; next: string } | null>(null);
   const { data: injuries } = useApi<{ active: Injury[] }>("/injuries");
+  const tests = useBenchmarkInputs(date, session?.benchmarks);
   const ready = type !== null && rpe !== null && (!injury || injury.part !== null);
 
   // After saving, a note that mentions a tweak or a healed injury gets a one-tap follow-up instead of
@@ -76,6 +79,7 @@ function SessionForm({ session }: { session: Session | null }) {
         max_grade: grade.trim() || null,
         notes: notes.trim() || null,
         new_injury: injury && { ...draftBody(injury), link: linked },
+        benchmarks: benchmarkBody(tests.inputs),
       };
       if (session) {
         const result = await send("PUT", `/sessions/${session.id}`, body);
@@ -142,6 +146,7 @@ function SessionForm({ session }: { session: Session | null }) {
             + new injury
           </button>
         )}
+        <BenchmarkFields inputs={tests.inputs} onChange={tests.setValue} />
         <button className="btn primary block" disabled={!ready || busy} onClick={submit}>
           {ready ? "Save" : type === null || rpe === null ? "Pick what and how hard" : "Pick where the injury is"}
         </button>

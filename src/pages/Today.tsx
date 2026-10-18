@@ -12,6 +12,7 @@ import {
   redFlagLabels,
   trendLabel,
 } from "../components/injury";
+import { testsLabel } from "../benchmarkInputs";
 import { ProfileInjuryBanner } from "../components/profileInjury";
 import { PlanFlags, StatusChip, WeekSoFar } from "../components/planStatus";
 import { Card, Chips, DatePicker, Field, Stepper, range } from "../components/ui";
@@ -81,6 +82,7 @@ export default function Today() {
         ) : (
           <p className="muted">Nothing planned. Ask Claude to write your plan, or add one under More → Plan.</p>
         )}
+        {testsLabel(todaysPlan) && <p className="small">Tests today: {testsLabel(todaysPlan)}</p>}
         {upcoming.length > 0 && (
           <ul className="mini-list">
             {upcoming.map((p) => (

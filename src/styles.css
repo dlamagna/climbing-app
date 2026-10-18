@@ -777,3 +777,19 @@ button {
   margin: 2px 0 0;
   padding: 0;
 }
+
+/* Planned benchmark inputs below the session form: one compact row per test. */
+.bench-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bench-row {
+  display: grid;
+  grid-template-columns: 1fr 6.5rem;
+  gap: 10px;
+  align-items: center;
+}
+.bench-row input {
+  padding: 8px 10px;
+}
