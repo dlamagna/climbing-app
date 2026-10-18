@@ -79,9 +79,14 @@ interface Pending {
 
 // Writes made without signal (gym basements) are queued and replayed on the next chance.
 // The same idempotency key goes with every attempt, so if the first one reached the server but its
-// response was lost, the replay doesn't insert a second copy.
-export async function send<T = unknown>(method: string, path: string, body?: unknown): Promise<T | { queued: true }> {
-  const key = crypto.randomUUID();
+// response was lost, the replay doesn't insert a second copy. Pass a key to refer to the row later
+// (the timer addresses its auto-logged session by it).
+export async function send<T = unknown>(
+  method: string,
+  path: string,
+  body?: unknown,
+  key: string = crypto.randomUUID(),
+): Promise<T | { queued: true }> {
   try {
     return await request<T>(method, path, body, undefined, key);
   } catch (e) {
