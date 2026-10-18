@@ -8,7 +8,8 @@
     "db:migrate:local": "wrangler d1 migrations apply climbing --local",
     "db:migrate:remote": "wrangler d1 migrations apply climbing --remote",
     "serve": "npm run build && wrangler dev",
-    "deploy": "npm run build && wrangler deploy"
+    "deploy": "npm run build && wrangler deploy",
+    "test": "vitest run"
   },
   "dependencies": {
     "hono": "^4.13.13",
@@ -22,6 +23,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
+    "vitest": "^5.0.5",
     "wrangler": "^4.150.0"
   },
   "allowScripts": {

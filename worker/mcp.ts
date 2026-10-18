@@ -31,10 +31,12 @@ Injuries: the morning check-in records, per active injury, pain 0-10, trend vs t
 worse/gone), morning stiffness and red flags (swelling, numbness, night_pain). Each update carries
 load_day_before / finger_load_day_before: infer from these whether the previous day's session aggravated it
 (e.g. "worse" after a hard finger day) and adjust; don't ask the climber. An injury's session_* fields are the
-session it was logged from, if any. Keep injury guidance to training-plan changes: unload or avoid the affected
-area, substitute exercises, cap intensity. No medical-referral advice. Any red flag: fully unload the affected
-area until no red flags have been reported for a few days. Recently resolved (trend "gone"): taper back to full
-intensity over several sessions rather than jumping straight back.
+session it was logged from, if any. Injuries can be entered after the fact (backdated started_on, sometimes
+already resolved, often from a pain word in a session note), so check started_on rather than assuming it is
+new. Keep injury guidance to training-plan changes: unload or avoid the affected area, substitute exercises,
+cap intensity. No medical-referral advice. Any red flag: fully unload the affected area until no red flags
+have been reported for a few days. Recently resolved (trend "gone"): taper back to full intensity over
+several sessions rather than jumping straight back.
 
 Load = duration_min * rpe. Check-in scales: sleep_quality 1-3, feeling 1-5 (5 = fresh), drinks = alcoholic
 drinks the day before, protein = rough low/ok/high for the day before.

@@ -22,6 +22,7 @@ import {
   updateSession,
   upsertCheckin,
 } from "./db";
+import { injuryDatesError } from "./injury-dates";
 import { handleMcp } from "./mcp";
 
 type C = Context<{ Bindings: Env }>;
@@ -62,9 +63,10 @@ async function sessionBody(c: C) {
   return s;
 }
 
+// Only the descriptive fields: dates and links are set by each route.
 function newInjury(i: any): NewInjury {
   if (!i?.body_part) throw new BadRequest("body_part is required");
-  return i;
+  return { body_part: i.body_part, side: i.side ?? null, description: i.description ?? null };
 }
 
 function injuryUpdate(u: any): InjuryUpdate {
@@ -82,7 +84,7 @@ function injuryUpdate(u: any): InjuryUpdate {
 async function sessionInjury(c: C, s: any, sessionId: number) {
   if (!s.new_injury) return;
   const key = clientId(c);
-  await insertInjury(c.env.DB, s.new_injury, s.date, s.new_injury.link === false ? null : sessionId, key).run();
+  await insertInjury(c.env.DB, newInjury(s.new_injury), s.date, s.new_injury.link === false ? null : sessionId, key).run();
 }
 
 const app = new Hono<{ Bindings: Env }>();
@@ -229,6 +231,18 @@ api.delete("/presets/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+// Session notes not linked to an injury yet, for "Review past notes" on the Injuries screen.
+// The app runs the keyword matcher (src/painWords.ts) on them; nothing is created here.
+api.get("/session-notes", async (c) => {
+  const { results } = await c.env.DB.prepare(
+    `SELECT id, date, type, notes FROM sessions
+     WHERE notes IS NOT NULL AND TRIM(notes) != ''
+       AND id NOT IN (SELECT session_id FROM injuries WHERE session_id IS NOT NULL)
+     ORDER BY date DESC, id DESC LIMIT 1000`,
+  ).all();
+  return c.json(results);
+});
+
 api.get("/injuries", async (c) => {
   const [active, { results: resolved }] = await Promise.all([
     activeInjuries(c.env.DB),
@@ -237,11 +251,16 @@ api.get("/injuries", async (c) => {
   return c.json({ active, resolved });
 });
 
+// Can be backdated, and with resolved_on an injury that has already healed is recorded in one go.
+// session_id links it to the session it happened in (e.g. added from an old session note).
 api.post("/injuries", async (c) => {
   const i = await c.req.json();
-  if (!isDate(i.started_on)) throw new BadRequest("started_on is required");
+  const dateError = injuryDatesError(i.started_on, i.resolved_on);
+  if (dateError) throw new BadRequest(dateError);
+  if (i.session_id != null && !Number.isInteger(i.session_id)) throw new BadRequest("session_id must be an integer");
   const key = clientId(c);
-  const row = await insertInjury(c.env.DB, newInjury(i), i.started_on, null, key).first<{ id: number }>();
+  const injury = { ...newInjury(i), resolved_on: i.resolved_on || null };
+  const row = await insertInjury(c.env.DB, injury, i.started_on, i.session_id ?? null, key).first<{ id: number }>();
   if (!row) return c.json({ id: (await idForClientId(c.env.DB, "injuries", key!)) }); // replayed
   if (typeof i.pain === "number") {
     await c.env.DB.batch(injuryUpdateStmts(c.env.DB, i.started_on, { injury_id: row.id, pain: i.pain }));
@@ -257,10 +276,16 @@ api.post("/injuries/:id/updates", async (c) => {
   return c.json({ ok: true });
 });
 
+// date may be in the past (healed a while ago), but not before the injury started.
 api.post("/injuries/:id/resolve", async (c) => {
+  const id = Number(c.req.param("id"));
   const { date } = await c.req.json();
   if (!isDate(date)) throw new BadRequest("date is required");
-  await c.env.DB.prepare("UPDATE injuries SET resolved_on = ? WHERE id = ?").bind(date, Number(c.req.param("id"))).run();
+  const injury = await c.env.DB.prepare("SELECT started_on FROM injuries WHERE id = ?").bind(id).first<{ started_on: string }>();
+  if (!injury) return c.json({ error: "Injury not found" }, 404);
+  const dateError = injuryDatesError(injury.started_on, date);
+  if (dateError) throw new BadRequest(dateError);
+  await c.env.DB.prepare("UPDATE injuries SET resolved_on = ? WHERE id = ?").bind(date, id).run();
   return c.json({ ok: true });
 });
 

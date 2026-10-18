@@ -176,6 +176,7 @@ export interface NewInjury {
   body_part: string;
   side?: string | null;
   description?: string | null;
+  resolved_on?: string | null; // set when an already-healed injury is recorded after the fact
 }
 
 // clientId makes the insert idempotent, as for sessions; a replay returns no row.
@@ -188,10 +189,10 @@ export function insertInjury(
 ) {
   return db
     .prepare(
-      `INSERT INTO injuries (body_part, side, description, started_on, session_id, client_id)
-       VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
+      `INSERT INTO injuries (body_part, side, description, started_on, resolved_on, session_id, client_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
     )
-    .bind(i.body_part, i.side ?? null, i.description ?? null, startedOn, sessionId, clientId);
+    .bind(i.body_part, i.side ?? null, i.description ?? null, startedOn, i.resolved_on ?? null, sessionId, clientId);
 }
 
 export interface InjuryUpdate {

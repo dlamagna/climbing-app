@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { savedToast, send, useApi } from "../api";
+import { isQueued, savedToast, send, useApi } from "../api";
 import { type InjuryDraft, EMPTY_DRAFT, QuickInjury, draftBody } from "../components/injury";
+import { NoteSuggestions } from "../components/noteSuggestions";
 import { Chips, DatePicker, Field, PageHeader, Stepper, range } from "../components/ui";
 import { localToday } from "../dates";
-import { SESSION_TYPES, type Session } from "../types";
+import { type NoteSuggestions as Suggestions, noteSuggestions } from "../painWords";
+import { type Injury, SESSION_TYPES, type Session } from "../types";
 
 export const EFFORT_HINT: Record<number, string> = {
   1: "barely anything",
@@ -46,7 +48,22 @@ function SessionForm({ session }: { session: Session | null }) {
   const [injury, setInjury] = useState<InjuryDraft | null>(null);
   const [linked, setLinked] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState<{ suggestions: Suggestions<Injury>; sessionId: number | null; next: string } | null>(null);
+  const { data: injuries } = useApi<{ active: Injury[] }>("/injuries");
   const ready = type !== null && rpe !== null && (!injury || injury.part !== null);
+
+  // After saving, a note that mentions a tweak or a healed injury gets a one-tap follow-up instead of
+  // going straight back. Skipped when an injury was added in the form, or an edit left the note as it was.
+  function afterSave(result: unknown, next: string) {
+    const noteChanged = !session || (session.notes ?? "") !== notes.trim();
+    const suggestions = noteSuggestions(injury || !noteChanged ? "" : notes, injuries?.active ?? []);
+    if (!suggestions.tweaks.length && !suggestions.healed.length) {
+      location.hash = next;
+      return;
+    }
+    const sessionId = session?.id ?? (isQueued(result) ? null : (result as { id: number }).id);
+    setSaved({ suggestions, sessionId, next });
+  }
 
   async function submit() {
     setBusy(true);
@@ -61,17 +78,25 @@ function SessionForm({ session }: { session: Session | null }) {
         new_injury: injury && { ...draftBody(injury), link: linked },
       };
       if (session) {
-        savedToast(await send("PUT", `/sessions/${session.id}`, body), "Session updated");
-        location.hash = "#/history";
+        const result = await send("PUT", `/sessions/${session.id}`, body);
+        savedToast(result, "Session updated");
+        afterSave(result, "#/history");
       } else {
-        savedToast(await send("POST", "/sessions", body), injury ? "Session and injury logged" : "Session logged");
-        location.hash = "#/today";
+        const result = await send("POST", "/sessions", body);
+        savedToast(result, injury ? "Session and injury logged" : "Session logged");
+        afterSave(result, "#/today");
       }
     } catch (e) {
       alert((e as Error).message);
     } finally {
       setBusy(false);
     }
+  }
+
+  if (saved) {
+    return (
+      <NoteSuggestions suggestions={saved.suggestions} sessionId={saved.sessionId} date={date} onDone={() => (location.hash = saved.next)} />
+    );
   }
 
   return (
