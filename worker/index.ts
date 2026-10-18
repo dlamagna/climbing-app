@@ -10,6 +10,8 @@ import {
   loadStats,
   moveCheckin,
   setPlan,
+  setPlanStatus,
+  todayIn,
   todayView,
   updateProfile,
   updateSession,
@@ -32,6 +34,7 @@ import {
 } from "./injuries";
 import { handleMcp } from "./mcp";
 import { deleteSession } from "./sessions";
+import { PLAN_STATUSES, isPlanStatus } from "./plan";
 import { deleteTimerSession, insertTimerLog, setTimerSessionRpe } from "./timerLog";
 import { isRpe } from "./timerSession";
 
@@ -67,6 +70,7 @@ async function sessionBody(c: C) {
   if (!isDate(s.date) || !s.type || !(s.duration_min > 0) || !(s.rpe >= 1 && s.rpe <= 10)) {
     throw new BadRequest("date, type, duration_min and rpe (1-10) are required");
   }
+  if (s.plan_id != null && !Number.isInteger(s.plan_id)) throw new BadRequest("plan_id must be an integer");
   if (s.new_injury) parseNewInjury(s.new_injury);
   return s;
 }
@@ -275,9 +279,20 @@ api.post("/injuries/:id/reopen", async (c) => {
   return c.json({ ok: true });
 });
 
+// Entries carry status, auto_status, session_id and flags (worker/plan.ts). `today` is the phone's date;
+// app versions that don't send it get today in the profile's timezone.
 api.get("/plan", async (c) => {
   const from = dateParam(c, "from");
-  return c.json(await getPlan(c.env.DB, from, c.req.query("to") ?? addDays(from, 27)));
+  const today = c.req.query("today") ? dateParam(c, "today") : todayIn((await getProfile(c.env.DB)).timezone);
+  return c.json((await getPlan(c.env.DB, from, c.req.query("to") ?? addDays(from, 27), today)).entries);
+});
+
+// One-tap status from Plan / Today; status null goes back to automatic.
+api.put("/plan/:id/status", async (c) => {
+  const { status } = await c.req.json();
+  if (status !== null && !isPlanStatus(status)) throw new BadRequest(`status must be null or one of ${PLAN_STATUSES}`);
+  const found = await setPlanStatus(c.env.DB, Number(c.req.param("id")), status);
+  return found ? c.json({ ok: true }) : c.json({ error: "Plan entry not found" }, 404);
 });
 
 api.post("/plan", async (c) => {

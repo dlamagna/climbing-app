@@ -1,8 +1,9 @@
 // Data access shared by the phone app's REST API and the MCP server.
 
 import { CHECKIN_COLUMNS, checkinUpsertSql } from "./checkins";
-import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, type LoadRow } from "./load";
+import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, mondayOf, type LoadRow } from "./load";
 import { allColumns } from "./partial";
+import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, weekSummary } from "./plan";
 import { SESSION_COLUMNS, updateSessionFields } from "./sessions";
 
 export { FINGER_TYPES, addDays, mondayOf, type WeekLoad } from "./load";
@@ -84,16 +85,17 @@ export interface Session {
   rpe: number;
   max_grade?: string | null;
   notes?: string | null;
+  plan_id?: number | null; // pinned link to a plan entry (see worker/plan.ts); NULL = auto-matched
 }
 
 // clientId makes the insert idempotent: replaying the same write returns the original row's id.
 export async function insertSession(db: D1Database, s: Session, clientId: string | null = null): Promise<number> {
   const row = await db
     .prepare(
-      `INSERT INTO sessions (date, type, duration_min, rpe, max_grade, notes, client_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
+      `INSERT INTO sessions (date, type, duration_min, rpe, max_grade, notes, plan_id, client_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
     )
-    .bind(s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null, clientId)
+    .bind(s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null, s.plan_id ?? null, clientId)
     .first<{ id: number }>();
   return row?.id ?? (await idForClientId(db, "sessions", clientId!));
 }
@@ -103,9 +105,12 @@ export async function idForClientId(db: D1Database, table: "sessions" | "hang_lo
   return row!.id;
 }
 
-// The app's edit form sends every field; see worker/sessions.ts for the column whitelist.
+// The app's edit form sends every field; see worker/sessions.ts for the column whitelist. plan_id is the
+// exception: only changed when passed (the edit form doesn't send it), so an edit keeps a pinned plan link.
 export async function updateSession(db: D1Database, id: number, s: Session): Promise<boolean> {
-  return (await updateSessionFields(db, id, allColumns(SESSION_COLUMNS, s as unknown as Record<string, unknown>))) !== null;
+  const values = allColumns(SESSION_COLUMNS.filter((c) => c !== "plan_id"), s as unknown as Record<string, unknown>);
+  if (s.plan_id !== undefined) values.plan_id = s.plan_id;
+  return (await updateSessionFields(db, id, values)) !== null;
 }
 
 export interface PlanEntry {
@@ -114,25 +119,55 @@ export interface PlanEntry {
   type?: string | null;
   intensity?: string | null;
   details?: string | null;
+  duration_min?: number | null;
 }
 
 // Writes plan entries. With replaceDates, existing entries on those dates are removed first,
-// so re-planning a week doesn't leave duplicates behind.
+// so re-planning a week doesn't leave duplicates behind (their status overrides and pinned session links go
+// with them; statuses are re-derived against the new entries).
 export async function setPlan(db: D1Database, entries: PlanEntry[], replaceDates: boolean) {
   const dates = [...new Set(entries.map((e) => e.date))];
   const stmts = [
     ...(replaceDates ? dates.map((d) => db.prepare("DELETE FROM plan WHERE date = ?").bind(d)) : []),
     ...entries.map((e) =>
       db
-        .prepare("INSERT INTO plan (date, title, type, intensity, details) VALUES (?, ?, ?, ?, ?)")
-        .bind(e.date, e.title, e.type ?? null, e.intensity ?? null, e.details ?? null),
+        .prepare("INSERT INTO plan (date, title, type, intensity, details, duration_min) VALUES (?, ?, ?, ?, ?, ?)")
+        .bind(e.date, e.title, e.type ?? null, e.intensity ?? null, e.details ?? null, e.duration_min ?? null),
     ),
   ];
   if (stmts.length) await db.batch(stmts);
 }
 
-export async function getPlan(db: D1Database, from: string, to: string) {
-  return all(db, "SELECT * FROM plan WHERE date BETWEEN ? AND ? ORDER BY date, id", from, to);
+const minDate = (a: string, b: string) => (a < b ? a : b);
+const maxDate = (a: string, b: string) => (a > b ? a : b);
+
+// Plan entries from..to with their derived status and conflict flags (worker/plan.ts). Reads a wider window
+// so conflicts see the last week and the next planned days whatever range the caller asked for.
+export async function getPlan(db: D1Database, from: string, to: string, today: string) {
+  const lo = minDate(from, addDays(today, -7));
+  const hi = maxDate(to, addDays(today, 14));
+  const [entries, sessions] = await Promise.all([
+    all<PlanRow & Row>(db, "SELECT * FROM plan WHERE date BETWEEN ? AND ? ORDER BY date, id", lo, hi),
+    all<SessionRow>(
+      db,
+      `SELECT id, date, type, duration_min, rpe, plan_id FROM sessions
+       WHERE date BETWEEN ? AND ? OR plan_id IN (SELECT id FROM plan WHERE date BETWEEN ? AND ?)`,
+      lo, hi, lo, hi,
+    ),
+  ]);
+  const view = planView(entries, sessions, today);
+  return {
+    entries: view.entries.filter((e) => e.date >= from && e.date <= to),
+    all: view.entries,
+    sessions,
+    conflicts: view.conflicts,
+  };
+}
+
+// Hand-picked status for a plan entry; null goes back to automatic.
+export async function setPlanStatus(db: D1Database, id: number, status: PlanStatus | null): Promise<boolean> {
+  const { meta } = await db.prepare("UPDATE plan SET status_override = ? WHERE id = ?").bind(status, id).run();
+  return meta.changes > 0;
 }
 
 export async function addCoachNote(db: D1Database, date: string, text: string): Promise<number> {
@@ -190,13 +225,13 @@ export async function todayView(db: D1Database, today: string) {
   const [checkin, lastCheckin, plan, coachNotes, sessions, injuries, load] = await Promise.all([
     db.prepare("SELECT * FROM checkins WHERE date = ?").bind(today).first(),
     db.prepare("SELECT * FROM checkins WHERE date < ? ORDER BY date DESC LIMIT 1").bind(today).first(),
-    getPlan(db, today, addDays(today, 6)),
+    getPlan(db, mondayOf(today), addDays(today, 6), today), // from Monday for the week-so-far line
     all(db, "SELECT * FROM coach_notes WHERE date >= ? ORDER BY date DESC, id DESC LIMIT 3", addDays(today, -1)),
     all(db, "SELECT * FROM sessions WHERE date = ? ORDER BY id", today),
     activeInjuries(db),
     loadStats(db, today, 4),
   ]);
-  return { today, checkin, last_checkin: lastCheckin, plan, coach_notes: coachNotes, sessions, injuries, load };
+  return { today, checkin, last_checkin: lastCheckin, plan: plan.entries, plan_conflicts: plan.conflicts, coach_notes: coachNotes, sessions, injuries, load };
 }
 
 // Everything Claude needs to answer "how should I train today?" in one call.
@@ -207,7 +242,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     activeInjuries(db),
     loadStats(db, today, 6),
     history(db, from, today),
-    getPlan(db, from, addDays(today, 7)),
+    getPlan(db, from, addDays(today, 7), today),
     all(db, "SELECT date, text FROM coach_notes ORDER BY date DESC, id DESC LIMIT 5"),
     all(db, "SELECT date, name, value, unit, notes FROM benchmarks ORDER BY date DESC LIMIT 30"),
     all(db, "SELECT body_part, side, started_on, resolved_on FROM injuries WHERE resolved_on IS NOT NULL ORDER BY resolved_on DESC LIMIT 5"),
@@ -222,7 +257,10 @@ export async function overview(db: D1Database, today: string, days: number) {
     checkins: hist.checkins,
     sessions: hist.sessions,
     hangboard: hist.hangs,
-    plan_past_and_next_7_days: plan,
+    plan_past_and_next_7_days: plan.entries,
+    plan_adherence: adherence(plan.all, plan.sessions, from, today),
+    plan_week_so_far: weekSummary(plan.all, today),
+    plan_conflicts: plan.conflicts,
     recent_coach_notes: coachNotes,
     benchmarks,
   };
