@@ -10,5 +10,7 @@
     "isolatedModules": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["."]
+  "include": ["."],
+  // Tests run under Node via vitest (node:sqlite, node:fs), not in the Worker runtime.
+  "exclude": ["**/*.test.ts"]
 }

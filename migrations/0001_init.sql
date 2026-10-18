@@ -1,5 +1,7 @@
 -- Dates are local calendar dates as 'YYYY-MM-DD'. Timestamps are UTC ISO strings.
--- Column comments are kept by SQLite, so Claude sees them via the MCP get_schema tool.
+-- D1 strips SQL comments when applying migrations, so the comments in these files are for developers only.
+-- Claude sees column docs via the MCP get_schema tool, which takes them from worker/schema-docs.ts
+-- (every new column needs an entry there; worker/schema-docs.test.ts checks it).
 
 CREATE TABLE checkins (
   date TEXT PRIMARY KEY,          -- the morning of the check-in
