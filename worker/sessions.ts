@@ -31,12 +31,19 @@ export const sessionId = (v: unknown): number => {
 export const sessionPatch = (args: Record<string, unknown>) => pickPatch(SESSION_FIELDS, args, ["id"]);
 
 // Changes only the given columns and marks the session edited. Returns the updated row, or null if no such id.
+// A new date also moves the benchmark results entered with the session (they carry its date, issue #22).
 export async function updateSessionFields(db: D1Database, id: number, values: Record<string, unknown>) {
   const { sql, params } = updateByIdSql("sessions", id, SESSION_COLUMNS, values, "updated_at");
-  return db.prepare(sql).bind(...params).first();
+  if (values.date === undefined) return db.prepare(sql).bind(...params).first();
+  const [updated] = await db.batch([
+    db.prepare(sql).bind(...params),
+    db.prepare("UPDATE benchmarks SET date = (SELECT date FROM sessions WHERE id = ?) WHERE session_id = ?").bind(id, id),
+  ]);
+  return (updated.results[0] as Record<string, unknown> | undefined) ?? null;
 }
 
-// Returns the deleted row. Injuries linked to it stay, with session_id set to NULL (foreign key).
+// Returns the deleted row. Injuries and benchmark results linked to it stay, with session_id set to NULL
+// (foreign keys).
 export async function deleteSession(db: D1Database, id: number) {
   return db.prepare("DELETE FROM sessions WHERE id = ? RETURNING *").bind(id).first();
 }

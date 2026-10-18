@@ -9,6 +9,7 @@ import {
   insertSession,
   loadStats,
   moveCheckin,
+  sessionBenchmarkStmts,
   setPlan,
   setPlanStatus,
   todayIn,
@@ -17,6 +18,7 @@ import {
   updateSession,
   upsertCheckin,
 } from "./db";
+import { parseExpectedBenchmarks, sessionBenchmarkWrites } from "./benchmarks";
 import { BadRequest } from "./errors";
 import {
   type InjuryUpdate,
@@ -72,7 +74,23 @@ async function sessionBody(c: C) {
   }
   if (s.plan_id != null && !Number.isInteger(s.plan_id)) throw new BadRequest("plan_id must be an integer");
   if (s.new_injury) parseNewInjury(s.new_injury);
+  s.benchmark_writes = badRequestOn(() => sessionBenchmarkWrites(s.benchmarks));
   return s;
+}
+
+// Turns a validation error from a pure helper into a 400.
+function badRequestOn<T>(f: () => T): T {
+  try {
+    return f();
+  } catch (e) {
+    throw new BadRequest((e as Error).message);
+  }
+}
+
+// Results for the plan's expected benchmarks, entered below the session form.
+async function sessionBenchmarks(c: C, s: any, sessionId: number) {
+  const writes = s.benchmark_writes;
+  if (writes.save.length || writes.clear.length) await c.env.DB.batch(sessionBenchmarkStmts(c.env.DB, sessionId, s.date, writes));
 }
 
 // An injury quick-added from the session log starts on the session's date, linked to it unless link is false.
@@ -154,19 +172,25 @@ api.delete("/checkins/:date", async (c) => {
 api.post("/sessions", async (c) => {
   const s = await sessionBody(c);
   const id = await insertSession(c.env.DB, s, clientId(c));
+  await sessionBenchmarks(c, s, id);
   await sessionInjury(c, s, id);
   return c.json({ id });
 });
 
+// With the benchmark results entered with it, so editing shows them.
 api.get("/sessions/:id", async (c) => {
-  const row = await c.env.DB.prepare("SELECT * FROM sessions WHERE id = ?").bind(Number(c.req.param("id"))).first();
-  return row ? c.json(row) : c.json({ error: "Session not found" }, 404);
+  const id = Number(c.req.param("id"));
+  const row = await c.env.DB.prepare("SELECT * FROM sessions WHERE id = ?").bind(id).first();
+  if (!row) return c.json({ error: "Session not found" }, 404);
+  const { results } = await c.env.DB.prepare("SELECT name, value, unit FROM benchmarks WHERE session_id = ? ORDER BY id").bind(id).all();
+  return c.json({ ...row, benchmarks: results });
 });
 
 api.put("/sessions/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const s = await sessionBody(c);
   if (!(await updateSession(c.env.DB, id, s))) return c.json({ error: "Session not found" }, 404);
+  await sessionBenchmarks(c, s, id);
   await sessionInjury(c, s, id);
   return c.json({ ok: true });
 });
@@ -298,6 +322,7 @@ api.put("/plan/:id/status", async (c) => {
 api.post("/plan", async (c) => {
   const e = await c.req.json();
   if (!isDate(e.date) || !e.title) throw new BadRequest("date and title are required");
+  e.expected_benchmarks = badRequestOn(() => parseExpectedBenchmarks(e.expected_benchmarks));
   await setPlan(c.env.DB, [e], false);
   return c.json({ ok: true });
 });

@@ -53,6 +53,7 @@ export interface PlanRow {
   intensity: string | null;
   duration_min?: number | null;
   status_override?: string | null;
+  expected_benchmarks?: { name: string }[] | null; // decoded list (worker/benchmarks.ts)
 }
 
 export interface SessionRow {
@@ -67,9 +68,11 @@ export interface SessionRow {
 export const isRestEntry = (e: Pick<PlanRow, "type" | "intensity">) =>
   e.type === "rest" || (!e.type && e.intensity === "rest");
 
-// Strength days and test days are the ones worth rescheduling when missed.
+// Strength days and test days are the ones worth rescheduling when missed. A test day is one with
+// expected_benchmarks (#22) or, for entries written before those existed, a test-sounding title.
 export const isKeyEntry = (e: PlanRow) =>
-  !isRestEntry(e) && (e.type === "strength" || /\b(test|benchmark|baseline|assess)/i.test(e.title));
+  !isRestEntry(e) &&
+  (e.type === "strength" || Boolean(e.expected_benchmarks?.length) || /\b(test|benchmark|baseline|assess)/i.test(e.title));
 
 const load = (s: SessionRow) => s.duration_min * s.rpe;
 

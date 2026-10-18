@@ -105,7 +105,7 @@ export const WRITE_TOOLS: Tool[] = [
   {
     name: "update_session",
     description:
-      "Fix a logged session by id (ids are in get_overview's sessions). Only the fields you pass change; null clears max_grade or notes (notes are replaced as a whole). Load is recomputed from duration_min * rpe. Returns the updated session.",
+      "Fix a logged session by id (ids are in get_overview's sessions). Only the fields you pass change; null clears max_grade or notes (notes are replaced as a whole). Load is recomputed from duration_min * rpe. A new date also moves the benchmark results logged with it. Returns the updated session.",
     inputSchema: {
       type: "object",
       properties: { id: { type: "integer" }, ...schemaOf(SESSION_FIELDS) },
@@ -122,7 +122,7 @@ export const WRITE_TOOLS: Tool[] = [
   {
     name: "delete_session",
     description:
-      "Delete a logged session by id, e.g. a duplicate. Returns the deleted row (log it again with log_session if it was a mistake). Injuries linked to it stay but lose the link. Prefer update_session to fix values.",
+      "Delete a logged session by id, e.g. a duplicate. Returns the deleted row (log it again with log_session if it was a mistake). Injuries and benchmark results linked to it stay but lose the link. Prefer update_session to fix values.",
     inputSchema: { type: "object", properties: { id: { type: "integer" } }, required: ["id"] },
     annotations: { destructiveHint: true, idempotentHint: true },
     run: async (a, env) => {

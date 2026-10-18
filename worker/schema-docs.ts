@@ -123,6 +123,8 @@ export const COLUMN_DOCS: Record<string, Record<string, string>> = {
     status_override:
       "status set by hand in the app: 'planned' | 'done' | 'partial' | 'skipped' | 'swapped'; NULL = automatic (derived from sessions at read time, see get_overview plan_adherence)",
     duration_min: "planned duration in minutes, optional; a matched session under 60% of it counts as 'partial'",
+    expected_benchmarks:
+      "tests planned that day as a JSON array of {\"name\", \"unit\"} (names match benchmarks.name); NULL if none",
   },
   coach_notes: {
     id: "row id",
@@ -138,6 +140,8 @@ export const COLUMN_DOCS: Record<string, Record<string, string>> = {
     unit: "e.g. 'kg added', 'reps'",
     notes: "free text",
     created_at: CREATED_AT,
+    session_id:
+      "references sessions.id: set when the result was entered with a session on the Log page (one per name per session, date follows the session); NULL for results from the Benchmarks page or MCP, or if the session was deleted",
   },
   profile: {
     key: "fact name, e.g. 'goal', 'trip_date', 'level', 'weekly_availability', 'timezone'",
