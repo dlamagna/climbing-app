@@ -24,6 +24,8 @@ import {
 } from "./db";
 import { injuryDatesError } from "./injury-dates";
 import { handleMcp } from "./mcp";
+import { deleteTimerSession, insertTimerLog, setTimerSessionRpe } from "./timerLog";
+import { isRpe } from "./timerSession";
 
 type C = Context<{ Bindings: Env }>;
 
@@ -181,20 +183,24 @@ api.delete("/sessions/:id", async (c) => {
   return c.json({ ok: true });
 });
 
+// Also logs the run as a hangboard session (when the app sends duration_min), see worker/timerLog.ts.
 api.post("/hangs", async (c) => {
   const h = await c.req.json();
   if (!isDate(h.date)) throw new BadRequest("date is required");
-  const key = clientId(c);
-  const row = await c.env.DB.prepare(
-    `INSERT INTO hang_logs (date, preset, on_s, off_s, reps, sets, set_rest_s, completed_reps, edge_mm, grip, added_kg, notes, client_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
-  )
-    .bind(
-      h.date, h.preset, h.on_s, h.off_s, h.reps, h.sets, h.set_rest_s, h.completed_reps,
-      h.edge_mm ?? null, h.grip ?? null, h.added_kg ?? null, h.notes ?? null, key,
-    )
-    .first<{ id: number }>();
-  return c.json({ id: row?.id ?? (await idForClientId(c.env.DB, "hang_logs", key!)) });
+  return c.json(await insertTimerLog(c.env.DB, h, clientId(c)));
+});
+
+// The session logged with a timer run, addressed by the hang log's Idempotency-Key (works offline).
+api.patch("/hangs/by-key/:key/session", async (c) => {
+  const { rpe } = await c.req.json();
+  if (!isRpe(rpe)) throw new BadRequest("rpe (1-10) is required");
+  const found = await setTimerSessionRpe(c.env.DB, c.req.param("key"), rpe);
+  return found ? c.json({ ok: true }) : c.json({ error: "Session not found" }, 404);
+});
+
+api.delete("/hangs/by-key/:key/session", async (c) => {
+  await deleteTimerSession(c.env.DB, c.req.param("key"));
+  return c.json({ ok: true });
 });
 
 api.delete("/hangs/:id", async (c) => {

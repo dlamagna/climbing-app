@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isQueued, savedToast, send, toast, useApi } from "../api";
 import { Card, Chips, Field, PageHeader, Stepper, range, seconds } from "../components/ui";
 import { localToday } from "../dates";
-import { Beeper, PHASE_LABEL, ScreenLock, buildPhases, clock, totalSeconds } from "../timer";
+import { Beeper, PHASE_LABEL, ScreenLock, activeSeconds, buildPhases, clock, sessionMinutes, totalSeconds } from "../timer";
 import type { Preset } from "../types";
 import { effortHint } from "./Log";
 
@@ -27,7 +27,8 @@ interface Result {
   preset: Preset;
   completed: number;
   planned: number;
-  elapsedSec: number;
+  elapsedSec: number; // wall clock, pauses included
+  activeSec: number; // time in the hang/rest phases, which is what the session's duration uses
   stoppedEarly: boolean;
 }
 
@@ -205,6 +206,7 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
   const endsAt = useRef(0);
   const pausedLeft = useRef<number | null>(null);
   const completed = useRef(0);
+  const spent = useRef<number[]>([]); // seconds spent in each phase
   const startedAt = useRef(0);
   const lastBeep = useRef("");
   const finished = useRef(false);
@@ -213,6 +215,10 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
   function finish(stoppedEarly: boolean) {
     if (finished.current) return;
     finished.current = true;
+    if (stoppedEarly && idx.current < phases.length) {
+      const left = pausedLeft.current ?? endsAt.current - performance.now();
+      spent.current[idx.current] = phases[idx.current].duration - left / 1000;
+    }
     screen.current.stop();
     if (!stoppedEarly) beeper.current.done();
     onFinish({
@@ -220,6 +226,7 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
       completed: completed.current,
       planned,
       elapsedSec: Math.round((performance.now() - startedAt.current) / 1000),
+      activeSec: activeSeconds(phases, spent.current),
       stoppedEarly,
     });
   }
@@ -232,8 +239,9 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
   }
 
   // Advance past the current phase. A hang only counts when it ran to the end, not when skipped.
-  function advance(countHang: boolean): boolean {
+  function advance(countHang: boolean, spentSec: number): boolean {
     if (phases[idx.current].kind === "hang" && countHang) completed.current++;
+    spent.current[idx.current] = spentSec;
     idx.current++;
     if (idx.current >= phases.length) {
       finish(false);
@@ -248,7 +256,7 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
     if (finished.current || pausedLeft.current !== null) return;
     const now = performance.now();
     // Loop: if the page was throttled, catch up through every phase that ended meanwhile.
-    while (now >= endsAt.current) if (!advance(true)) return;
+    while (now >= endsAt.current) if (!advance(true, phases[idx.current].duration)) return;
     const left = Math.ceil((endsAt.current - now) / 1000);
     const key = `${idx.current}:${left}`;
     if (left <= 3 && lastBeep.current !== key && phases[idx.current].duration > 3) {
@@ -288,7 +296,7 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
     const left = pausedLeft.current ?? endsAt.current - now;
     endsAt.current -= left; // jump to the end of this phase, then into the next one
     if (pausedLeft.current !== null) pausedLeft.current = phases[idx.current + 1]?.duration * 1000;
-    if (advance(false)) {
+    if (advance(false, phases[idx.current].duration - left / 1000)) {
       if (pausedLeft.current !== null) endsAt.current = now + pausedLeft.current;
       tick();
       setView((v) => ({ ...v, i: idx.current, left: phases[idx.current].duration }));
@@ -333,45 +341,76 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
   );
 }
 
+interface HangSaved {
+  id: number;
+  session: { id: number; rpe: number; duration_min: number } | null;
+}
+
+// The run is saved straight away as a hang log plus a hangboard session (so it always counts toward
+// training load), with a default effort. Picking an effort here updates that session; History can edit it later.
 function Finished({ result, onClose }: { result: Result; onClose: () => void }) {
-  const { preset, completed, planned, elapsedSec, stoppedEarly } = result;
+  const { preset, completed, planned, elapsedSec, activeSec, stoppedEarly } = result;
   const [saved, setSaved] = useState<"saving" | "saved" | "queued" | "skipped" | "error">(completed > 0 ? "saving" : "skipped");
   const [rpe, setRpe] = useState<number | null>(null);
-  const [sessionLogged, setSessionLogged] = useState(false);
+  const [counted, setCounted] = useState(true);
+  const key = useRef(crypto.randomUUID()); // the hang log's client_id; the session's is derived from it
+  // Follow-up writes wait for the insert (and each other), so they never reach the server before it.
+  const chain = useRef<Promise<unknown>>(Promise.resolve());
+  const minutes = sessionMinutes(activeSec);
   const posted = useRef(false);
 
-  // The hangboard log is saved automatically; logging it as a session (for training load) is optional.
   useEffect(() => {
     if (completed === 0 || posted.current) return;
     posted.current = true;
-    send("POST", "/hangs", {
-      date: localToday(),
-      preset: preset.name,
-      on_s: preset.on_s,
-      off_s: preset.off_s,
-      reps: preset.reps,
-      sets: preset.sets,
-      set_rest_s: preset.set_rest_s,
-      completed_reps: completed,
-      edge_mm: preset.edge_mm,
-      grip: preset.grip,
-      added_kg: preset.added_kg,
-    })
-      .then((r) => setSaved(isQueued(r) ? "queued" : "saved"))
+    const insert = send<HangSaved>(
+      "POST",
+      "/hangs",
+      {
+        date: localToday(),
+        preset: preset.name,
+        on_s: preset.on_s,
+        off_s: preset.off_s,
+        reps: preset.reps,
+        sets: preset.sets,
+        set_rest_s: preset.set_rest_s,
+        completed_reps: completed,
+        edge_mm: preset.edge_mm,
+        grip: preset.grip,
+        added_kg: preset.added_kg,
+        duration_min: minutes,
+      },
+      key.current,
+    )
+      .then((r) => {
+        if (isQueued(r)) return setSaved("queued");
+        setSaved("saved");
+        if (r.session) setRpe((v) => v ?? r.session!.rpe);
+        else setCounted(false);
+      })
       .catch(() => setSaved("error"));
+    chain.current = insert;
   }, []);
 
-  async function logSession() {
-    const r = await send("POST", "/sessions", {
-      date: localToday(),
-      type: "hangboard",
-      duration_min: Math.max(1, Math.round(elapsedSec / 60)),
-      rpe,
-      notes: `${preset.name}: ${completed}/${planned} hangs`,
-    });
-    savedToast(r, "Session logged");
-    setSessionLogged(true);
+  // Each write goes after the previous one; its failure is shown but doesn't block the next.
+  function afterInsert(write: () => Promise<unknown>, done: string) {
+    chain.current = chain.current.then(write).then(
+      (r) => savedToast(r, done),
+      (e) => toast((e as Error).message),
+    );
   }
+
+  function pickRpe(v: number | null) {
+    if (v === null || v === rpe) return;
+    setRpe(v);
+    afterInsert(() => send("PATCH", `/hangs/by-key/${key.current}/session`, { rpe: v }), "Effort updated");
+  }
+
+  function dontCount() {
+    setCounted(false);
+    afterInsert(() => send("DELETE", `/hangs/by-key/${key.current}/session`), "Not counted");
+  }
+
+  const canAdjust = counted && saved !== "error" && saved !== "skipped";
 
   return (
     <div className="page">
@@ -379,20 +418,20 @@ function Finished({ result, onClose }: { result: Result; onClose: () => void }) 
       <p className="muted">
         {{
           saving: "Saving…",
-          saved: "Saved to your log ✓",
+          saved: counted ? `Saved to your log as a ${minutes} min hangboard session ✓` : "Saved to your log ✓",
           queued: "Saved offline - will sync when you have signal",
           skipped: "Nothing to save - no hangs completed.",
           error: "Couldn't save this one.",
         }[saved]}
       </p>
-      {completed > 0 && !sessionLogged && (
-        <Card title="Also log as a hangboard session?">
-          <p className="muted small">Only if this was its own workout, not a warm-up before climbing - otherwise you'd count it twice.</p>
-          <Field label="How hard" hint={effortHint(rpe)}>
-            <Chips wrap options={range(1, 10).map((v) => ({ value: v, label: String(v) }))} value={rpe} onChange={setRpe} />
+      {canAdjust && (
+        <Card title="How hard was it?">
+          <Field label="Effort" hint={rpe === null ? "default used unless you pick one" : effortHint(rpe)}>
+            <Chips wrap options={range(1, 10).map((v) => ({ value: v, label: String(v) }))} value={rpe} onChange={pickRpe} />
           </Field>
-          <button className="btn block" disabled={rpe === null} onClick={logSession}>
-            Log session
+          <p className="muted small">Just a warm-up before climbing? Don't count it, or it counts twice.</p>
+          <button className="btn block" onClick={dontCount}>
+            Don't count it
           </button>
         </Card>
       )}

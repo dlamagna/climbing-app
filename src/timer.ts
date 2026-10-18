@@ -34,6 +34,16 @@ export function buildPhases(p: Preset): Phase[] {
 
 export const totalSeconds = (p: Preset) => buildPhases(p).reduce((acc, ph) => acc + ph.duration, 0);
 
+// Seconds actually spent hanging and resting: spent[i] is how long phase i ran (full length if it ran
+// out, less if it was skipped or the run was stopped in it). Pauses aren't in it, and neither is the
+// get-ready countdown.
+export function activeSeconds(phases: Phase[], spent: number[]): number {
+  return phases.reduce((acc, ph, i) => acc + (ph.kind === "prep" ? 0 : Math.max(0, Math.min(ph.duration, spent[i] ?? 0))), 0);
+}
+
+// Whole minutes for the logged session (sessions.duration_min is an integer >= 1).
+export const sessionMinutes = (sec: number) => Math.max(1, Math.round(sec / 60));
+
 export function clock(s: number): string {
   if (s < 60) return String(s);
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
