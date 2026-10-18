@@ -29,6 +29,12 @@ done
 npm run deploy                            # prints https://climbing-app.<you>.workers.dev
 ```
 
+**Auto-deploy.** After the first manual deploy, every push to `main` is deployed by GitHub Actions
+(`.github/workflows/ci.yml`): the `build` job runs on every push and PR, and on `main` the `deploy`
+job then applies D1 migrations and runs `wrangler deploy`. It needs two repo secrets (Settings →
+Secrets and variables → Actions): `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN` (a custom
+token with *Workers Scripts: Edit* and *D1: Edit*). The worker's own secrets stay in Cloudflare.
+
 `cat .tokens` shows both tokens; keep them in a password manager. A secret can't be read back from
 Cloudflare. If you lose one, run the loop again for that name.
 
@@ -79,7 +85,7 @@ npm run serve            # builds, then runs the full app on http://localhost:87
 npm run dev              # optional: Vite hot reload on :5173, proxying /api to :8787
 ```
 
-Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:local` / `db:migrate:remote`.
+Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:local`. Merging to `main` applies it remotely.
 
 ## What's where
 

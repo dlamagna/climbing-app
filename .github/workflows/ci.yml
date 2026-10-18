@@ -1,0 +1,85 @@
+# Build on every push and PR; deploy to Cloudflare when main passes.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch: # manual redeploy of main from the Actions tab
+
+permissions:
+  contents: read
+
+# Superseded runs on feature branches are cancelled. On main they queue instead, so a deploy that
+# is mid-migration is never cancelled.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # wrangler 4 needs Node >= 22. Node 24 ships npm 11, which reads `allowScripts` from
+      # package.json: esbuild and workerd run their install scripts, unlisted packages don't.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm test --if-present
+      - run: npm run build # typechecks the app and the worker, then builds dist/
+
+  deploy:
+    needs: build
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # One deploy at a time, across all runs. Never cancel one that is running.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      # If two pushes land close together, only deploy the commit that is still the tip of main;
+      # the newer commit's own run deploys it.
+      - name: Check this commit is still the tip of main
+        id: tip
+        run: |
+          tip=$(git ls-remote origin refs/heads/main | cut -f1)
+          if [ "$tip" = "$GITHUB_SHA" ]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::main has moved on to $tip; skipping deploy of $GITHUB_SHA."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v7
+        if: steps.tip.outputs.current == 'true'
+        with:
+          node-version: 24
+          cache: npm
+
+      - if: steps.tip.outputs.current == 'true'
+        run: npm ci
+
+      - if: steps.tip.outputs.current == 'true'
+        run: npm run build
+
+      # Uses the wrangler from package-lock.json. Commands run in order and stop at the first
+      # failure, so a failed migration means no deploy.
+      - name: Migrate D1, then deploy
+        if: steps.tip.outputs.current == 'true'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: |
+            d1 migrations apply climbing --remote
+            deploy
