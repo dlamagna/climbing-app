@@ -12,6 +12,7 @@ import { CHECKIN_COLUMNS, checkinUpsertSql } from "./checkins";
 import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, mondayOf, type LoadRow } from "./load";
 import { allColumns } from "./partial";
 import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, weekSummary } from "./plan";
+import { type ReadinessCheckin, type ReadinessInjury, readiness } from "./readiness";
 import { SESSION_COLUMNS, updateSessionFields } from "./sessions";
 
 export { FINGER_TYPES, addDays, mondayOf, type WeekLoad } from "./load";
@@ -268,7 +269,34 @@ export async function todayView(db: D1Database, today: string) {
     activeInjuries(db),
     loadStats(db, today, 4),
   ]);
-  return { today, checkin, last_checkin: lastCheckin, plan: plan.entries, plan_conflicts: plan.conflicts, coach_notes: coachNotes, sessions, injuries, load };
+  return {
+    today,
+    checkin,
+    last_checkin: lastCheckin,
+    plan: plan.entries,
+    plan_conflicts: plan.conflicts,
+    coach_notes: coachNotes,
+    sessions,
+    injuries,
+    load,
+    readiness: todayReadiness(today, checkin, load, plan, injuries),
+  };
+}
+
+// The same call for the app and the coach (worker/readiness.ts). getPlan's sessions and entries always cover
+// the last 7 days, which is all readiness looks at.
+function todayReadiness(
+  today: string,
+  checkin: unknown,
+  load: Awaited<ReturnType<typeof loadStats>>,
+  plan: Awaited<ReturnType<typeof getPlan>>,
+  injuries: Row[],
+) {
+  return readiness((checkin as ReadinessCheckin | null) ?? null, load, plan.sessions, {
+    today,
+    injuries: injuries as unknown as ReadinessInjury[],
+    plan: plan.all,
+  });
 }
 
 // Everything Claude needs to answer "how should I train today?" in one call.
@@ -292,6 +320,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     active_injuries: injuries,
     recently_resolved_injuries: resolved,
     training_load: load,
+    readiness: todayReadiness(today, hist.checkins.find((c) => c.date === today), load, plan, injuries),
     checkins: hist.checkins,
     sessions: hist.sessions,
     hangboard: hist.hangs,

@@ -74,7 +74,7 @@ export const isKeyEntry = (e: PlanRow) =>
   !isRestEntry(e) &&
   (e.type === "strength" || Boolean(e.expected_benchmarks?.length) || /\b(test|benchmark|baseline|assess)/i.test(e.title));
 
-const load = (s: SessionRow) => s.duration_min * s.rpe;
+const load = (s: Pick<SessionRow, "duration_min" | "rpe">) => s.duration_min * s.rpe;
 
 // Plan entry id -> session id. Pinned links first (a pin to a rest entry is ignored); then, per date, every (entry, session) pair is ranked
 // by type similarity (ties: longer session first, then lower ids) and taken greedily, so each entry gets
@@ -157,7 +157,7 @@ export interface PlanConflict {
   message: string;
 }
 
-export function isHardDay(daySessions: SessionRow[]): boolean {
+export function isHardDay(daySessions: Pick<SessionRow, "duration_min" | "rpe">[]): boolean {
   return (
     daySessions.some((s) => s.rpe >= HARD_RPE) || daySessions.reduce((acc, s) => acc + load(s), 0) >= HARD_DAY_LOAD
   );

@@ -17,7 +17,7 @@ import { ProfileInjuryBanner } from "../components/profileInjury";
 import { PlanFlags, StatusChip, WeekSoFar } from "../components/planStatus";
 import { Card, Chips, DatePicker, Field, Stepper, range } from "../components/ui";
 import { dayLabel, localToday, prettyDate } from "../dates";
-import { type Checkin, type Injury, type LoadStats, type PlanEntry, type TodayView, typeLabel } from "../types";
+import { type Checkin, type Injury, type LoadStats, type PlanEntry, type Readiness, type TodayView, typeLabel } from "../types";
 
 export const FEELING = ["", "Wrecked", "Tired", "OK", "Good", "Fresh"];
 export const SLEEP_QUALITY = ["", "Bad", "OK", "Good"];
@@ -70,6 +70,8 @@ export default function Today() {
         </Card>
       )}
 
+      <ReadinessBanner readiness={data.readiness} />
+
       {note && (
         <Card title={`Coach · ${dayLabel(note.date, today)}`}>
           <p className="prewrap">{note.text}</p>
@@ -120,6 +122,22 @@ export default function Today() {
 
       <LoadCard load={data.load} />
     </div>
+  );
+}
+
+// Worked out by the worker (worker/readiness.ts), the same call the coach gets. Only shown when amber / red.
+export const READINESS_TITLE = { green: "", amber: "Take it a bit easier today", red: "Rest or easy day today" };
+
+function ReadinessBanner({ readiness }: { readiness?: Readiness }) {
+  if (!readiness || readiness.level === "green") return null;
+  return (
+    <Card title={READINESS_TITLE[readiness.level]} tone={readiness.level === "red" ? "bad" : "warn"}>
+      <ul className="mini-list">
+        {readiness.reasons.map((r) => (
+          <li key={r}>{r}</li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 
