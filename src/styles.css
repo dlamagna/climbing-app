@@ -1074,3 +1074,22 @@ button {
   width: 44px;
   height: 44px;
 }
+
+/* Weekly summary card (#9): label + one line of text per row. */
+.week-rows {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 14px;
+}
+.week-rows > div {
+  display: contents;
+}
+.week-rows dt {
+  color: var(--muted);
+}
+.week-rows dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
