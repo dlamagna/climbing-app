@@ -43,7 +43,7 @@ import { handleMcp } from "./mcp";
 import { GYM_MESSAGE, isGymInput } from "./gyms";
 import { deleteSession, outdoorColumn, outdoorError } from "./sessions";
 import { PLAN_STATUSES, isPlanStatus } from "./plan";
-import { deleteTimerSession, insertTimerLog, setTimerSessionRpe } from "./timerLog";
+import { deleteTimerSession, insertTimerLog, markSessionWarmup, setTimerSessionRpe, setTimerWarmup } from "./timerLog";
 import { isRpe } from "./timerSession";
 
 type C = Context<{ Bindings: Env }>;
@@ -248,6 +248,17 @@ api.delete("/hangs/by-key/:key/session", async (c) => {
   await deleteTimerSession(c.env.DB, c.req.param("key"));
   return c.json({ ok: true });
 });
+
+// The finished screen's warm-up / training choice (#50): {warmup: true} or {warmup: false, duration_min}.
+api.put("/hangs/by-key/:key/warmup", async (c) => {
+  const { warmup, duration_min } = await c.req.json();
+  if (typeof warmup !== "boolean") throw new BadRequest("warmup must be true or false");
+  const session = await setTimerWarmup(c.env.DB, c.req.param("key"), warmup, duration_min);
+  return c.json({ ok: true, session });
+});
+
+// History's "Mark as warm-up" on a hangboard session (#50).
+api.post("/sessions/:id/warmup", async (c) => c.json(await markSessionWarmup(c.env.DB, Number(c.req.param("id")))));
 
 api.delete("/hangs/:id", async (c) => {
   await c.env.DB.prepare("DELETE FROM hang_logs WHERE id = ?").bind(Number(c.req.param("id"))).run();

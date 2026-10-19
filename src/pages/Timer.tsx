@@ -5,6 +5,7 @@ import { localToday } from "../dates";
 import { Beeper, PHASE_LABEL, ScreenLock, activeSeconds, buildPhases, clock, sessionMinutes, totalSeconds } from "../timer";
 import type { Preset } from "../types";
 import { effortHint } from "./Log";
+import { isWarmupPreset } from "../../worker/warmup";
 
 const LAST_PRESET_KEY = "climb.lastPreset";
 const GRIPS = ["open hand", "half crimp", "full crimp", "3 finger drag", "pinch"];
@@ -346,13 +347,15 @@ interface HangSaved {
   session: { id: number; rpe: number; duration_min: number } | null;
 }
 
-// The run is saved straight away as a hang log plus a hangboard session (so it always counts toward
-// training load), with a default effort. Picking an effort here updates that session; History can edit it later.
+// The run is saved straight away. A training run is a hang log plus a hangboard session (so it always counts
+// toward training load) with a default effort; picking an effort here updates that session. A warm-up for that
+// day's climbing (#50) is a hang log only, marked warmup: part of the climbing session, no session of its own.
+// Warm-up presets start as warm-ups, the others as training; switching here works offline too.
 function Finished({ result, onClose }: { result: Result; onClose: () => void }) {
   const { preset, completed, planned, elapsedSec, activeSec, stoppedEarly } = result;
   const [saved, setSaved] = useState<"saving" | "saved" | "queued" | "skipped" | "error">(completed > 0 ? "saving" : "skipped");
   const [rpe, setRpe] = useState<number | null>(null);
-  const [counted, setCounted] = useState(true);
+  const [mode, setMode] = useState<"warmup" | "training">(isWarmupPreset(preset.name) ? "warmup" : "training");
   const key = useRef(crypto.randomUUID()); // the hang log's client_id; the session's is derived from it
   // Follow-up writes wait for the insert (and each other), so they never reach the server before it.
   const chain = useRef<Promise<unknown>>(Promise.resolve());
@@ -378,6 +381,7 @@ function Finished({ result, onClose }: { result: Result; onClose: () => void }) 
         grip: preset.grip,
         added_kg: preset.added_kg,
         duration_min: minutes,
+        warmup: mode === "warmup",
       },
       key.current,
     )
@@ -385,7 +389,6 @@ function Finished({ result, onClose }: { result: Result; onClose: () => void }) 
         if (isQueued(r)) return setSaved("queued");
         setSaved("saved");
         if (r.session) setRpe((v) => v ?? r.session!.rpe);
-        else setCounted(false);
       })
       .catch(() => setSaved("error"));
     chain.current = insert;
@@ -405,12 +408,20 @@ function Finished({ result, onClose }: { result: Result; onClose: () => void }) 
     afterInsert(() => send("PATCH", `/hangs/by-key/${key.current}/session`, { rpe: v }), "Effort updated");
   }
 
-  function dontCount() {
-    setCounted(false);
-    afterInsert(() => send("DELETE", `/hangs/by-key/${key.current}/session`), "Not counted");
+  function pickMode(v: "warmup" | "training" | null) {
+    if (v === null || v === mode) return;
+    setMode(v);
+    afterInsert(async () => {
+      const r = await send<{ session: HangSaved["session"] }>("PUT", `/hangs/by-key/${key.current}/warmup`, {
+        warmup: v === "warmup",
+        duration_min: minutes,
+      });
+      if (!isQueued(r) && r.session) setRpe((x) => x ?? r.session!.rpe);
+      return r;
+    }, v === "warmup" ? "Saved as a warm-up" : "Counted as a training session");
   }
 
-  const canAdjust = counted && saved !== "error" && saved !== "skipped";
+  const canAdjust = saved !== "error" && saved !== "skipped";
 
   return (
     <div className="page">
@@ -418,21 +429,36 @@ function Finished({ result, onClose }: { result: Result; onClose: () => void }) 
       <p className="muted">
         {{
           saving: "Saving…",
-          saved: counted ? `Saved to your log as a ${minutes} min hangboard session ✓` : "Saved to your log ✓",
+          saved:
+            mode === "warmup"
+              ? "Saved as a warm-up for today's climbing ✓ (not a separate session)"
+              : `Saved to your log as a ${minutes} min hangboard session ✓`,
           queued: "Saved offline - will sync when you have signal",
           skipped: "Nothing to save - no hangs completed.",
           error: "Couldn't save this one.",
         }[saved]}
       </p>
       {canAdjust && (
-        <Card title="How hard was it?">
-          <Field label="Effort" hint={rpe === null ? "default used unless you pick one" : effortHint(rpe)}>
-            <Chips wrap options={range(1, 10).map((v) => ({ value: v, label: String(v) }))} value={rpe} onChange={pickRpe} />
-          </Field>
-          <p className="muted small">Just a warm-up before climbing? Don't count it, or it counts twice.</p>
-          <button className="btn block" onClick={dontCount}>
-            Don't count it
-          </button>
+        <Card title="What was it?">
+          <Chips
+            wrap
+            options={[
+              { value: "warmup" as const, label: "Warm-up for today's climbing" },
+              { value: "training" as const, label: "Training session" },
+            ]}
+            value={mode}
+            onChange={pickMode}
+          />
+          <p className="muted small">
+            {mode === "warmup"
+              ? "Part of today's climbing session: kept in your history, but not a separate session and no extra load."
+              : "Counts as its own hangboard session toward your training load."}
+          </p>
+          {mode === "training" && (
+            <Field label="How hard was it?" hint={rpe === null ? "default used unless you pick one" : effortHint(rpe)}>
+              <Chips wrap options={range(1, 10).map((v) => ({ value: v, label: String(v) }))} value={rpe} onChange={pickRpe} />
+            </Field>
+          )}
         </Card>
       )}
       <button className="btn primary block" onClick={onClose}>

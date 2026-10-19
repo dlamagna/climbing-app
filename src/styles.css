@@ -1154,3 +1154,8 @@ button {
   content: "✓ ";
   color: var(--accent);
 }
+
+/* Hangboard warm-up under the day's climbing session (#50): indented, reads as part of it. */
+.entry.warmup {
+  padding-left: 14px;
+}
