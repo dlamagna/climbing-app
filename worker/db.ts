@@ -11,6 +11,7 @@ import {
 import { CHECKIN_COLUMNS, checkinUpsertSql } from "./checkins";
 import { climbingDaysContext, currentClimbingDays, ensureWeeklyQuestion, lastRun, lastUpdate, openQuestions, pendingQuestions } from "./coach";
 import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, mondayOf, type LoadRow } from "./load";
+import { CLIMB_DAYS_AHEAD } from "./coachTopics";
 import { allColumns } from "./partial";
 import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, weekSummary } from "./plan";
 import { type ReadinessCheckin, type ReadinessInjury, readiness } from "./readiness";
@@ -373,7 +374,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     activeInjuries(db),
     loadStats(db, today, 6),
     history(db, from, today),
-    getPlan(db, from, addDays(today, 7), today),
+    getPlan(db, from, addDays(today, Math.max(7, CLIMB_DAYS_AHEAD - 1)), today), // as far as climbing days can be picked (#56)
     all(db, "SELECT date, text FROM coach_notes ORDER BY date DESC, id DESC LIMIT 5"),
     all(db, "SELECT date, name, value, unit, notes FROM benchmarks ORDER BY date DESC LIMIT 30"),
     all(db, "SELECT body_part, side, started_on, resolved_on FROM injuries WHERE resolved_on IS NOT NULL ORDER BY resolved_on DESC LIMIT 5"),
@@ -398,7 +399,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     sessions: hist.sessions,
     gyms,
     hangboard: hist.hangs,
-    plan_past_and_next_7_days: plan.entries,
+    plan_past_and_next_9_days: plan.entries,
     plan_adherence: adherence(plan.all, plan.sessions, from, today),
     plan_week_so_far: weekSummary(plan.all, today),
     week_summary: weekSummaryOf(today, week, load, plan),

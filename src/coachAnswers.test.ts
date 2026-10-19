@@ -26,8 +26,11 @@ describe("togglePick", () => {
 });
 
 describe("Plan my climbing days", () => {
-  it("offers a week from today", () => {
-    expect(plannerDays("2026-05-29")).toEqual(["2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02", "2026-06-03", "2026-06-04"]);
+  it("offers today and the next 9 days", () => {
+    expect(plannerDays("2026-05-29")).toEqual([
+      "2026-05-29", "2026-05-30", "2026-05-31", "2026-06-01", "2026-06-02",
+      "2026-06-03", "2026-06-04", "2026-06-05", "2026-06-06", "2026-06-07",
+    ]);
   });
   it("builds the body, nothing until something is picked", () => {
     expect(climbingDaysBody([], "")).toBeNull();

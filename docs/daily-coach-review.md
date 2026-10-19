@@ -15,7 +15,8 @@ prompt never needs to change.
 - **Nothing new** (no sessions logged or edited, no answers, no feedback, plan still filled): the run
   records a `no_change` run and stops. Most rest days end here after a few seconds.
 - **Something changed:** the run reads `get_overview` and then:
-  - **adjusts the plan** for the next 7 days, starting tomorrow. It never touches today or past days, and it
+  - **adjusts the plan** for the next 7 days starting tomorrow, or further when your picked days reach past
+    them. It never touches today or past days, and it
     keeps plan entries you added or marked by hand (`set_plan` with `keep_app_entries`).
   - **plans around your climbing days.** Days you picked are fixed, and the days between them stay light.
     After the last fixed session, including a single one, it plans forward from the next day. With nothing
@@ -36,7 +37,7 @@ prompt never needs to change.
 |---|---|---|
 | Today → *Coach asks* | Questions from the review. Tap an answer, type one, or skip | The next run uses the answer, then closes the question |
 | Weekly pop-up (Monday to Wednesday) | *Which days do you plan to climb this week?* | The week's climbing goes on those days |
-| Today → *Plan my climbing days* | Pick days in the next 7, with an optional note, any time | Same as the weekly question; the latest pick wins |
+| Today → *Plan my climbing days* | Pick days from today to 9 days ahead, with an optional note, any time | Same as the weekly question; the latest pick wins |
 | More → App feedback | Bugs and ideas about the app | Sorted into GitHub issues |
 | Settings → Pop-ups | Turns the weekly pop-up off. The question still shows as a card on Today | - |
 

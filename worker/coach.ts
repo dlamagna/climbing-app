@@ -416,7 +416,8 @@ the climber anything in chat, work only through these tools.
    answers: climbing_days (in this result and in get_overview's coach) is the latest pick that still applies,
    already as dates, and stays there after you close the question.
 
-4. Plan: keep the next 7 days filled, starting tomorrow. Change only what the new data calls for; if the
+4. Plan: keep the next 7 days filled, starting tomorrow, and further when climbing_days.to reaches past them
+   (up to that day). Change only what the new data calls for; if the
    plan still fits, leave it. Rewrite with set_plan and keep_app_entries: true (entries the climber added or
    set a status on stay). Never change today or past days. Put planned tests in expected_benchmarks.
    Fixed sessions are the days in climbing_days.days and plan entries the climber added by hand (source
@@ -424,7 +425,7 @@ the climber anything in chat, work only through these tools.
    - Picked days: put the climbing sessions on them; days between them get rest, mobility or light
      non-finger work, never extra climbing. no_climbing: no climbing sessions from climbing_days.from to .to.
    - After the last fixed session (one picked day, a single session in the calendar, or the end of the
-     picks), start planning from the day after it: fill the rest of the 7 days with what you suggest.
+     picks), start planning from the day after it: fill the rest of the planning window with what you suggest.
      Keep the days before a lone fixed session light, so they arrive fresh.
    - Nothing fixed (climbing_days is null or out of date): suggest the days yourself from the current load
      (ratio_total / ratio_finger and baseline_status), readiness, recent hard days and recovery, the
