@@ -18,6 +18,9 @@ export function addDays(date: string, days: number): string {
   return fmt(d);
 }
 
+// "Wed 21", for day chips.
+export const shortDay = (date: string) => parse(date).toLocaleDateString(undefined, { weekday: "short", day: "numeric" });
+
 export const prettyDate = (date: string) =>
   parse(date).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
 

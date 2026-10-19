@@ -12,7 +12,10 @@ import {
   askQuestion,
   changesSince,
   NOT_THIS_WEEK,
+  NO_CLIMBING,
+  climbingDaysAnswer,
   closeQuestions,
+  currentClimbingDays,
   ensureWeeklyQuestion,
   lastRun,
   lastUpdate,
@@ -25,8 +28,10 @@ import {
   parseRun,
   pendingQuestions,
   questionStatus,
+  parseClimbingDays,
   recordRun,
   resolveFeedback,
+  setClimbingDays,
   reviewDecision,
   startReview,
   weeklyQuestion,
@@ -103,6 +108,30 @@ describe("weeklyQuestion", () => {
   });
   it("isn't created from Thursday on", () => {
     for (const d of ["2026-05-07", "2026-05-09", "2026-05-10"]) expect(weeklyQuestion(d)).toBeNull();
+  });
+});
+
+describe("parseClimbingDays", () => {
+  // TODAY = 2026-05-10 (a Sunday): the window is 10 to 16 May.
+  it("sorts and dedupes days in the 7-day window", () => {
+    expect(parseClimbingDays({ days: ["2026-05-14", "2026-05-11", "2026-05-14"], note: " evenings " }, TODAY)).toEqual({
+      days: ["2026-05-11", "2026-05-14"],
+      note: "evenings",
+    });
+    expect(parseClimbingDays({ days: [] }, TODAY)).toEqual({ days: [], note: null });
+  });
+  it.each([
+    [{}, /must be a list/],
+    [{ days: "2026-05-11" }, /must be a list/],
+    [{ days: ["11 May"] }, /YYYY-MM-DD/],
+    [{ days: ["2026-05-09"] }, /from 2026-05-10 to 2026-05-16/],
+    [{ days: ["2026-05-17"] }, /from 2026-05-10 to 2026-05-16/],
+  ])("rejects %j", (b, msg) => {
+    expect(() => parseClimbingDays(b, TODAY)).toThrow(msg);
+  });
+  it("writes the answer like the weekly one", () => {
+    expect(climbingDaysAnswer({ days: ["2026-05-11", "2026-05-14"], note: "evenings" })).toBe("Mon 11, Thu 14 - evenings");
+    expect(climbingDaysAnswer({ days: [], note: null })).toBe(NO_CLIMBING);
   });
 });
 
@@ -324,6 +353,37 @@ describe("questions", () => {
     await ensureWeeklyQuestion(db, "2026-05-07"); // Thursday: too late to ask
     await ensureWeeklyQuestion(db, "2026-05-11"); // next Monday
     expect(rows("SELECT topic FROM coach_questions ORDER BY id")).toEqual([{ topic: "week_days:2026-05-04" }, { topic: "week_days:2026-05-11" }]);
+  });
+
+  it("Plan my climbing days: answers, replaces the open weekly question, and re-saving the same day replaces it", async () => {
+    const MON = "2026-05-04";
+    await ensureWeeklyQuestion(db, MON);
+    expect(await currentClimbingDays(db, MON)).toBeNull();
+
+    await setClimbingDays(db, { days: ["2026-05-05", "2026-05-08"] }, MON);
+    expect(await openQuestions(db, MON)).toEqual([]); // the weekly question was closed
+    expect((await currentClimbingDays(db, MON))!.answer).toBe("Tue 5, Fri 8");
+
+    await setClimbingDays(db, { days: ["2026-05-06"], note: "outdoors" }, MON);
+    expect(rows("SELECT COUNT(*) AS n FROM coach_questions WHERE topic LIKE 'climb_days:%'")).toEqual([{ n: 1 }]);
+    const { answered } = await pendingQuestions(db, MON);
+    expect(answered.map((q) => q.answer)).toEqual(["Wed 6 - outdoors"]);
+    expect(answered[0].options).toEqual(["Mon 4", "Tue 5", "Wed 6", "Thu 7", "Fri 8", "Sat 9", "Sun 10", NO_CLIMBING]);
+
+    // A later day's pick closes the earlier one; the latest is what Today shows.
+    exec("UPDATE coach_questions SET answered_at = '2026-05-04T08:00:00Z' WHERE topic = 'climb_days:2026-05-04'");
+    await setClimbingDays(db, { days: [] }, "2026-05-06");
+    expect((await pendingQuestions(db, "2026-05-06")).answered.map((q) => q.topic)).toEqual(["climb_days:2026-05-06"]);
+    expect((await currentClimbingDays(db, "2026-05-06"))!.answer).toBe(NO_CLIMBING);
+    expect(await currentClimbingDays(db, "2026-05-13")).toBeNull(); // past its window
+  });
+
+  it("an already answered weekly question stays for the coach when days are picked later", async () => {
+    await ensureWeeklyQuestion(db, "2026-05-04");
+    const [q] = await openQuestions(db, "2026-05-04");
+    await answerQuestion(db, q.id, { answer: "Tue 5" }, "2026-05-04");
+    await setClimbingDays(db, { days: ["2026-05-07"] }, "2026-05-05");
+    expect((await pendingQuestions(db, "2026-05-05")).answered.map((x) => x.topic)).toEqual(["week_days:2026-05-04", "climb_days:2026-05-05"]);
   });
 
   it("start_daily_review creates the weekly question too", async () => {

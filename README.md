@@ -92,8 +92,9 @@ stops. Otherwise it:
 Every run is logged, and the Today screen shows what the last review changed.
 
 At the start of each week (first app open, Monday to Wednesday) the app also asks which days you plan to climb,
-as a pop-up with a chip per day and an optional note. That night's review plans the week's climbing on those
-days.
+as a pop-up with a chip per day and an optional note. You can also pick your days any time with **Plan my
+climbing days** on Today. Either way, that night's review plans your climbing on those days. Pop-ups can be
+switched off under More → Profile & settings, and the question then only shows as a card on Today.
 
 To set it up, in Claude Code run `/schedule` (or create a routine on claude.ai/code). Pick a daily time
 after you usually train, for example 22:00, attach the climbing-app connector, and use this prompt:

@@ -9,7 +9,7 @@ import {
   parseExpectedBenchmarks,
 } from "./benchmarks";
 import { CHECKIN_COLUMNS, checkinUpsertSql } from "./checkins";
-import { ensureWeeklyQuestion, lastRun, lastUpdate, openQuestions, pendingQuestions } from "./coach";
+import { currentClimbingDays, ensureWeeklyQuestion, lastRun, lastUpdate, openQuestions, pendingQuestions } from "./coach";
 import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, mondayOf, type LoadRow } from "./load";
 import { allColumns } from "./partial";
 import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, weekSummary } from "./plan";
@@ -318,7 +318,7 @@ function weekSummaryOf(
 
 export async function todayView(db: D1Database, today: string) {
   await ensureWeeklyQuestion(db, today); // the weekly "which days" question (#54), before reading questions
-  const [checkin, lastCheckin, plan, coachNotes, sessions, injuries, load, week, questions, coachUpdate] = await Promise.all([
+  const [checkin, lastCheckin, plan, coachNotes, sessions, injuries, load, week, questions, coachUpdate, climbingDays] = await Promise.all([
     db.prepare("SELECT * FROM checkins WHERE date = ?").bind(today).first(),
     db.prepare("SELECT * FROM checkins WHERE date < ? ORDER BY date DESC LIMIT 1").bind(today).first(),
     getPlan(db, mondayOf(today), addDays(today, 6), today), // from Monday for the week-so-far line
@@ -329,6 +329,7 @@ export async function todayView(db: D1Database, today: string) {
     weekCheckins(db, today),
     openQuestions(db, today),
     lastUpdate(db),
+    currentClimbingDays(db, today),
   ]);
   return {
     today,
@@ -344,6 +345,7 @@ export async function todayView(db: D1Database, today: string) {
     week: weekSummaryOf(today, week, load, plan),
     coach_questions: questions,
     coach_update: coachUpdate, // the last daily review that changed something (#52)
+    climbing_days: climbingDays, // the days last picked for climbing (#54, #56), while they still apply
   };
 }
 

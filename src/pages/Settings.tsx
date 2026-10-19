@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { fetchFile, savedToast, send, setToken, toast, useApi } from "../api";
-import { Card, Field, PageHeader } from "../components/ui";
+import { Card, Chips, Field, PageHeader } from "../components/ui";
+import { popupsEnabled, setPopupsEnabled } from "../prefs";
 
 // Free-form profile facts; Claude reads all of them when planning.
 const FIELDS = [
@@ -49,6 +50,12 @@ export default function Settings() {
     savedToast(await send("PUT", "/profile", values), "Profile saved");
   }
 
+  const [popups, setPopups] = useState(popupsEnabled);
+  function changePopups(on: boolean) {
+    setPopupsEnabled(on);
+    setPopups(on);
+  }
+
   const [exporting, setExporting] = useState(false);
   async function exportData() {
     setExporting(true);
@@ -84,6 +91,20 @@ export default function Settings() {
           ))}
           <button className="btn primary block" onClick={save}>Save profile</button>
         </div>
+      </Card>
+      <Card title="Pop-ups">
+        <p className="small">
+          The weekly "which days will you climb?" question opens as a pop-up. Switched off, it only shows as a card on Today, and you can
+          still plan your days any time with <em>Plan my climbing days</em>. Saved on this phone.
+        </p>
+        <Chips
+          options={[
+            { value: "on", label: "On" },
+            { value: "off", label: "Off" },
+          ]}
+          value={popups ? "on" : "off"}
+          onChange={(v) => v && changePopups(v === "on")}
+        />
       </Card>
       <Card title="Connect Claude">
         <p className="small">Add a custom connector in Claude (Settings → Connectors) with this URL, using your MCP token:</p>

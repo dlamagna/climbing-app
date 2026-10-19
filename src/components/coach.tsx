@@ -3,8 +3,9 @@
 // weekly "which days will you climb" question (#54) also opens as a pop-up.
 import { useState } from "react";
 import { savedToast, send } from "../api";
-import { addDays, dayLabel, localDateOf } from "../dates";
-import { isWeekly, multiAnswer, togglePick } from "../coachAnswers";
+import { addDays, dayLabel, localDateOf, shortDay } from "../dates";
+import { popupsEnabled } from "../prefs";
+import { NO_CLIMBING, climbingDaysBody, isWeekly, multiAnswer, plannerDays, togglePick } from "../coachAnswers";
 import type { CoachQuestion, CoachRun } from "../types";
 import { Card } from "./ui";
 
@@ -125,11 +126,12 @@ function setLaterDay(id: number, day: string) {
   }
 }
 
-// The weekly question as a pop-up over Today. "Later" hides it until the next day (it stays as a card).
+// The weekly question as a pop-up over Today, unless pop-ups are off in Settings (#56). "Later" hides it until
+// the next day (it stays as a card).
 export function WeeklyPopup({ questions, today, onAnswered }: { questions: CoachQuestion[]; today: string; onAnswered: (id: number) => void }) {
   const q = questions.find(isWeekly);
   const [hidden, setHidden] = useState<number | null>(null);
-  if (!q || hidden === q.id || laterDay(q.id) === today) return null;
+  if (!q || hidden === q.id || laterDay(q.id) === today || !popupsEnabled()) return null;
   return (
     <div className="popup-backdrop" role="dialog" aria-modal="true" aria-label="This week">
       <div className="popup card">
@@ -142,6 +144,85 @@ export function WeeklyPopup({ questions, today, onAnswered }: { questions: Coach
           }}
         />
       </div>
+    </div>
+  );
+}
+
+export interface ClimbingDaysView {
+  answer: string;
+  answered_at: string;
+}
+
+// "Plan my climbing days" in Today's plan card (#56): pick days in the next week, the coach plans around them
+// in its next review. Always there, whether or not pop-ups are on.
+export function ClimbingDaysPlanner({ today, current, onSaved }: { today: string; current: ClimbingDaysView | null; onSaved: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const body = climbingDaysBody(picked, note);
+
+  async function save() {
+    if (!body) return;
+    setBusy(true);
+    try {
+      savedToast(await send("PUT", "/coach/climbing-days", body), "Saved - the coach plans around it in the next review");
+      setOpen(false);
+      setPicked([]);
+      setNote("");
+      onSaved();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="climbing-days">
+        {current && (
+          <p className="small">
+            <span className="muted">Climbing days:</span> {current.answer}{" "}
+            <span className="muted">(set {dayLabel(localDateOf(current.answered_at), today).toLowerCase()})</span>
+          </p>
+        )}
+        <button className="btn block" onClick={() => setOpen(true)}>
+          Plan my climbing days
+        </button>
+      </div>
+    );
+  }
+
+  const options = [...plannerDays(today).map((d) => ({ value: d, label: d === today ? "Today" : shortDay(d) })), { value: NO_CLIMBING, label: NO_CLIMBING }];
+  return (
+    <div className="climbing-days picker">
+      <p>
+        <strong>Which days do you plan to climb?</strong>
+      </p>
+      <div className="chips wrap">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            aria-pressed={picked.includes(o.value)}
+            className={picked.includes(o.value) ? "chip on" : "chip"}
+            onClick={() => setPicked((p) => togglePick(p, o.value, NO_CLIMBING))}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <textarea rows={2} value={note} placeholder="Note (optional), e.g. evenings only, Saturday outdoors" onChange={(e) => setNote(e.target.value)} />
+      <div className="actions">
+        <button className="btn" disabled={busy} onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+        <button className="btn primary" disabled={busy || !body} onClick={save}>
+          Save
+        </button>
+      </div>
+      <p className="muted small">The coach plans your sessions on these days in its next daily review.</p>
     </div>
   );
 }
