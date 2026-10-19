@@ -1,5 +1,6 @@
 import type { PlanConflict, PlanStatus } from "../worker/plan";
 import type { Readiness } from "../worker/readiness";
+import type { WeekSummaryView } from "../worker/weekSummary";
 
 export type { PlanConflict, PlanStatus, Readiness };
 
@@ -148,6 +149,7 @@ export interface TodayView {
   injuries: Injury[];
   load: LoadStats;
   readiness?: Readiness; // computed by the worker (worker/readiness.ts); missing in older cached responses
+  week?: WeekSummaryView; // this week so far (worker/weekSummary.ts); missing in older cached responses
 }
 
 export interface HistoryView {
