@@ -54,6 +54,7 @@ export interface HangLog {
   edge_mm: number | null;
   grip: string | null;
   added_kg: number | null;
+  warmup?: number | null; // 1 = a warm-up for that day's climbing, no session of its own (#50)
 }
 
 export interface Preset {

@@ -29,6 +29,18 @@ export default function History() {
     }
   }
 
+  // A hangboard session that was really a warm-up for that day's climbing (#50): the session goes, the timer
+  // run stays as a warm-up. Offline it queues like the other edits.
+  async function markWarmup(id: number) {
+    if (!confirm("Mark as a warm-up? It stops counting as a separate session; the timer run stays in your history.")) return;
+    try {
+      savedToast(await send("POST", `/sessions/${id}/warmup`), "Marked as a warm-up");
+      reload();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
+
   return (
     <div className="page">
       <PageHeader title="History" sub="Last 8 weeks · ⋯ to edit or delete an entry" />
@@ -90,15 +102,17 @@ export default function History() {
                   label={`${typeLabel(s.type)} session options`}
                   items={[
                     { label: "Edit", onSelect: () => (location.hash = `#/log?edit=${s.id}`) },
+                    ...(s.type === "hangboard" ? [{ label: "Mark as warm-up", onSelect: () => markWarmup(s.id) }] : []),
                     { label: "Delete", danger: true, onSelect: () => remove("session", `/sessions/${s.id}`) },
                   ]}
                 />
               </div>
             ))}
             {hangs.map((h) => (
-              <div key={h.id} className="entry">
+              <div key={h.id} className={h.warmup ? "entry warmup" : "entry"}>
                 <div className="small">
-                  🖐 {h.preset}: {h.completed_reps}/{h.reps * h.sets} hangs · {h.on_s}s on
+                  {h.warmup ? <span className="muted">+ hangboard warm-up · </span> : "🖐 "}
+                  {h.preset}: {h.completed_reps}/{h.reps * h.sets} hangs · {h.on_s}s on
                   {h.edge_mm ? ` · ${h.edge_mm}mm` : ""}
                   {h.grip ? ` ${h.grip}` : ""}
                   {h.added_kg ? ` · ${h.added_kg > 0 ? "+" : ""}${h.added_kg}kg` : ""}

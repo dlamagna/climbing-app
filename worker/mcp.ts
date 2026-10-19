@@ -76,8 +76,9 @@ several sessions rather than jumping straight back.
 Load = duration_min * rpe, from sessions only. Each hangboard timer run writes a hang_logs row (the detail:
 preset, grip, edge, hangs done) plus a 'hangboard' session carrying its load, with a default rpe the climber
 may have adjusted (its client_id is the hang log's client_id + ':session'). Don't add hang_logs to load on
-top, that counts timer runs twice. A hang log without that session is from an older app version or was a
-warm-up the climber chose not to count.
+top, that counts timer runs twice. A hang log with warmup = 1 was a warm-up for that day's climbing: it is part
+of that session, not a separate training session, and adds no load (don't log a session for it). Other hang
+logs without that session are from an older app version.
 
 Check-in scales: sleep_quality 1-3, feeling 1-5 (5 = fresh), drinks = alcoholic drinks the day before,
 protein = rough low/ok/high for the day before.

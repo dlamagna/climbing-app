@@ -77,6 +77,7 @@ export const COLUMN_DOCS: Record<string, Record<string, string>> = {
     notes: "free text",
     created_at: CREATED_AT,
     client_id: CLIENT_ID,
+    warmup: "1 = a warm-up for that day's climbing (#50): part of that session, so no 'hangboard' session of its own and no load; 0 = training (default)",
   },
   timer_presets: {
     id: "row id",
