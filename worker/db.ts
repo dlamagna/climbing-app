@@ -12,6 +12,7 @@ import { CHECKIN_COLUMNS, checkinUpsertSql } from "./checkins";
 import { climbingDaysContext, currentClimbingDays, ensureWeeklyQuestion, lastRun, lastUpdate, openQuestions, pendingQuestions } from "./coach";
 import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, mondayOf, type LoadRow } from "./load";
 import { CLIMB_DAYS_AHEAD } from "./coachTopics";
+import { type GradedSession, gradeProgress, parseGrade } from "./grades";
 import { allColumns } from "./partial";
 import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, weekSummary } from "./plan";
 import { type ReadinessCheckin, type ReadinessInjury, readiness } from "./readiness";
@@ -369,7 +370,7 @@ function todayReadiness(
 // Everything Claude needs to answer "how should I train today?" in one call.
 export async function overview(db: D1Database, today: string, days: number) {
   const from = addDays(today, -(days - 1));
-  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests, mixRows, week, gyms, questions, run, picked] = await Promise.all([
+  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests, mixRows, week, gyms, questions, run, picked, graded] = await Promise.all([
     getProfile(db),
     activeInjuries(db),
     loadStats(db, today, 6),
@@ -385,6 +386,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     pendingQuestions(db, today),
     lastRun(db),
     currentClimbingDays(db, today),
+    all<GradedSession>(db, "SELECT date, type, max_grade FROM sessions WHERE max_grade IS NOT NULL AND date <= ?", today),
   ]);
   return {
     today,
@@ -396,7 +398,8 @@ export async function overview(db: D1Database, today: string, days: number) {
     readiness: todayReadiness(today, hist.checkins.find((c) => c.date === today), load, plan, injuries),
     mix: mixWindows(mixRows, today),
     checkins: hist.checkins,
-    sessions: hist.sessions,
+    sessions: hist.sessions.map(withGrade),
+    grade_progress: gradeProgress(graded, today),
     gyms,
     hangboard: hist.hangs,
     plan_past_and_next_9_days: plan.entries,
@@ -414,6 +417,12 @@ export async function overview(db: D1Database, today: string, days: number) {
       climbing_days: climbingDaysContext(picked), // the climber's latest pick of climbing days, as dates (#56)
     },
   };
+}
+
+// max_grade normalised at read time (worker/grades.ts), on the sessions it can read.
+function withGrade(s: Row) {
+  const grade = parseGrade(s.max_grade, s.type);
+  return grade ? { ...s, grade } : s;
 }
 
 // Benchmark names already in use (so planned tests reuse them and charts line up) and planned tests from

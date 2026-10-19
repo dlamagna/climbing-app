@@ -10,6 +10,7 @@ import { Chips, DatePicker, Field, PageHeader, Stepper, range } from "../compone
 import { localToday } from "../dates";
 import { type NoteSuggestions as Suggestions, noteSuggestions } from "../painWords";
 import { type Injury, type Readiness, SESSION_TYPES, type Session, type TodayView } from "../types";
+import { gradeHint, parseGrade } from "../../worker/grades";
 import { type KnownGym } from "../../worker/gyms";
 import { isHardSession } from "../../worker/readiness";
 import { type SessionTag, parseTags } from "../../worker/tags";
@@ -77,6 +78,9 @@ function SessionForm({ session }: { session: Session | null }) {
     if (!gymTouched && gyms?.length) setGym(gyms[0].name);
   }, [gyms, gymTouched]);
   const ready = type !== null && rpe !== null && (!injury || injury.part !== null);
+  // The grade in the other system of its discipline as you type (#60); the session type tells Font from French.
+  const parsedGrade = parseGrade(grade, type);
+  const gradeHintText = parsedGrade && gradeHint(parsedGrade);
 
   // After saving, a note that mentions a tweak or a healed injury gets a one-tap follow-up instead of
   // going straight back. Skipped when an injury was added in the form, or an edit left the note as it was.
@@ -176,6 +180,7 @@ function SessionForm({ session }: { session: Session | null }) {
         </Field>
         <Field label="Hardest send" hint="optional">
           <input value={grade} onChange={(e) => setGrade(e.target.value)} placeholder="e.g. 6C, V5, 7a" autoCapitalize="characters" />
+          {gradeHintText && <p className="muted small">{gradeHintText}</p>}
         </Field>
         <Field label="Notes" hint="optional">
           <textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="What you worked on, how fingers felt…" />
