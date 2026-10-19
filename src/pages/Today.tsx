@@ -14,7 +14,7 @@ import {
 } from "../components/injury";
 import { testsLabel } from "../benchmarkInputs";
 import { ProfileInjuryBanner } from "../components/profileInjury";
-import { CoachQuestions, CoachUpdate, WeeklyPopup, recentUpdate } from "../components/coach";
+import { ClimbingDaysPlanner, CoachQuestions, CoachUpdate, WeeklyPopup, recentUpdate } from "../components/coach";
 import { PlanFlags, StatusChip, WeekSoFar } from "../components/planStatus";
 import { WeekSummary } from "../components/WeekSummary";
 import { Card, Chips, DatePicker, Field, Stepper, range } from "../components/ui";
@@ -104,6 +104,7 @@ export default function Today() {
           </ul>
         )}
         <WeekSoFar entries={data.plan} today={today} />
+        <ClimbingDaysPlanner today={today} current={data.climbing_days ?? null} onSaved={reload} />
       </Card>
 
       <div className="actions">

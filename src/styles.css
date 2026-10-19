@@ -1219,3 +1219,17 @@ button {
   border-bottom: none;
   padding: 0;
 }
+.climbing-days {
+  margin-top: 10px;
+}
+.climbing-days p {
+  margin: 0 0 6px;
+}
+.climbing-days.picker {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.climbing-days.picker .actions {
+  margin: 0;
+}

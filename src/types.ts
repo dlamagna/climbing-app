@@ -185,6 +185,7 @@ export interface TodayView {
   week?: WeekSummaryView; // this week so far (worker/weekSummary.ts); missing in older cached responses
   coach_questions?: CoachQuestion[]; // open questions from the daily review; missing in older cached responses
   coach_update?: CoachRun | null; // the last review that changed something
+  climbing_days?: { answer: string; answered_at: string } | null; // days last picked for climbing, while they apply
 }
 
 export interface HistoryView {
