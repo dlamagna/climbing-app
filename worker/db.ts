@@ -15,6 +15,7 @@ import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, we
 import { type ReadinessCheckin, type ReadinessInjury, readiness } from "./readiness";
 import { SESSION_COLUMNS, outdoorColumn, updateSessionFields } from "./sessions";
 import { type MixSession, mixWindows } from "./typeGroups";
+import { type WeekCheckin, computeWeekSummary } from "./weekSummary";
 
 export { FINGER_TYPES, addDays, mondayOf, type WeekLoad } from "./load";
 
@@ -269,8 +270,23 @@ export async function history(db: D1Database, from: string, to: string) {
   return { sessions, checkins, hangs };
 }
 
+// Check-ins dated Monday to today, for the weekly summary.
+const weekCheckins = (db: D1Database, today: string) =>
+  all<WeekCheckin>(db, "SELECT date, sleep_hours, sleep_quality, drinks FROM checkins WHERE date BETWEEN ? AND ?", mondayOf(today), today);
+
+// The weekly summary (worker/weekSummary.ts), the same for the app and the coach. getPlan's entries and sessions
+// always cover Monday to Sunday of this week, and load.weeks ends with this week.
+function weekSummaryOf(
+  today: string,
+  checkins: WeekCheckin[],
+  load: Awaited<ReturnType<typeof loadStats>>,
+  plan: Awaited<ReturnType<typeof getPlan>>,
+) {
+  return computeWeekSummary({ today, checkins, sessions: plan.sessions, plan: plan.all, load });
+}
+
 export async function todayView(db: D1Database, today: string) {
-  const [checkin, lastCheckin, plan, coachNotes, sessions, injuries, load] = await Promise.all([
+  const [checkin, lastCheckin, plan, coachNotes, sessions, injuries, load, week] = await Promise.all([
     db.prepare("SELECT * FROM checkins WHERE date = ?").bind(today).first(),
     db.prepare("SELECT * FROM checkins WHERE date < ? ORDER BY date DESC LIMIT 1").bind(today).first(),
     getPlan(db, mondayOf(today), addDays(today, 6), today), // from Monday for the week-so-far line
@@ -278,6 +294,7 @@ export async function todayView(db: D1Database, today: string) {
     all(db, "SELECT * FROM sessions WHERE date = ? ORDER BY id", today),
     activeInjuries(db),
     loadStats(db, today, 4),
+    weekCheckins(db, today),
   ]);
   return {
     today,
@@ -290,6 +307,7 @@ export async function todayView(db: D1Database, today: string) {
     injuries,
     load,
     readiness: todayReadiness(today, checkin, load, plan, injuries),
+    week: weekSummaryOf(today, week, load, plan),
   };
 }
 
@@ -312,7 +330,7 @@ function todayReadiness(
 // Everything Claude needs to answer "how should I train today?" in one call.
 export async function overview(db: D1Database, today: string, days: number) {
   const from = addDays(today, -(days - 1));
-  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests, mixRows] = await Promise.all([
+  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests, mixRows, week] = await Promise.all([
     getProfile(db),
     activeInjuries(db),
     loadStats(db, today, 6),
@@ -323,6 +341,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     all(db, "SELECT body_part, side, started_on, resolved_on FROM injuries WHERE resolved_on IS NOT NULL ORDER BY resolved_on DESC LIMIT 5"),
     benchmarkOverview(db, today),
     all<MixSession>(db, "SELECT date, type, duration_min, rpe, outdoor FROM sessions WHERE date BETWEEN ? AND ?", addDays(today, -27), today),
+    weekCheckins(db, today),
   ]);
   return {
     today,
@@ -339,6 +358,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     plan_past_and_next_7_days: plan.entries,
     plan_adherence: adherence(plan.all, plan.sessions, from, today),
     plan_week_so_far: weekSummary(plan.all, today),
+    week_summary: weekSummaryOf(today, week, load, plan),
     plan_conflicts: plan.conflicts,
     recent_coach_notes: coachNotes,
     benchmarks,

@@ -15,6 +15,7 @@ import {
 import { testsLabel } from "../benchmarkInputs";
 import { ProfileInjuryBanner } from "../components/profileInjury";
 import { PlanFlags, StatusChip, WeekSoFar } from "../components/planStatus";
+import { WeekSummary } from "../components/WeekSummary";
 import { Card, Chips, DatePicker, Field, Stepper, range } from "../components/ui";
 import { dayLabel, localToday, prettyDate } from "../dates";
 import { type Checkin, type Injury, type LoadStats, type PlanEntry, type Readiness, type TodayView, typeLabel } from "../types";
@@ -119,6 +120,8 @@ export default function Today() {
           </ul>
         </Card>
       )}
+
+      <WeekSummary week={data.week} />
 
       <LoadCard load={data.load} />
     </div>
