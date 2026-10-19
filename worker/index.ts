@@ -21,6 +21,7 @@ import {
 } from "./db";
 import { parseExpectedBenchmarks, sessionBenchmarkWrites } from "./benchmarks";
 import { BadRequest } from "./errors";
+import { buildExport, exportFilename, quoteIdent, toCsv, userTables } from "./export";
 import {
   type InjuryUpdate,
   type NewInjury,
@@ -376,6 +377,50 @@ api.get("/profile", async (c) => c.json(await getProfile(c.env.DB)));
 api.put("/profile", async (c) => {
   await updateProfile(c.env.DB, await c.req.json());
   return c.json(await getProfile(c.env.DB));
+});
+
+// Backup: every user table as JSON, or ?format=csv&table=<name> for one table.
+api.get("/export", async (c) => {
+  const db = c.env.DB;
+  const format = c.req.query("format") ?? "json";
+  if (format !== "json" && format !== "csv") throw new BadRequest("format must be json or csv");
+  const { results: master } = await db
+    .prepare("SELECT name FROM sqlite_master WHERE type = 'table'")
+    .all<{ name: string }>();
+  const tables = userTables(master.map((r) => r.name));
+  const date = todayIn((await getProfile(db)).timezone);
+
+  if (format === "csv") {
+    const table = c.req.query("table");
+    if (!table || !tables.includes(table)) throw new BadRequest(`table must be one of: ${tables.join(", ")}`);
+    const [info, rows] = await db.batch([
+      db.prepare(`PRAGMA table_info(${quoteIdent(table)})`),
+      db.prepare(`SELECT * FROM ${quoteIdent(table)}`),
+    ]);
+    const columns = (info.results as { name: string }[]).map((col) => col.name);
+    return c.body(toCsv(columns, rows.results as Record<string, unknown>[]), 200, {
+      "Content-Type": "text/csv; charset=utf-8",
+      "Content-Disposition": `attachment; filename="${exportFilename(date, "csv", table)}"`,
+      "Cache-Control": "no-store",
+    });
+  }
+
+  const rows = tables.length ? await db.batch(tables.map((t) => db.prepare(`SELECT * FROM ${quoteIdent(t)}`))) : [];
+  // d1_migrations is created by wrangler; a database set up some other way may not have it.
+  const lastMigration = await db
+    .prepare("SELECT name FROM d1_migrations ORDER BY id DESC LIMIT 1")
+    .first<string>("name")
+    .catch(() => null);
+  const file = buildExport(
+    Object.fromEntries(tables.map((t, i) => [t, rows[i].results as Record<string, unknown>[]])),
+    lastMigration,
+    new Date(),
+  );
+  return c.body(JSON.stringify(file, null, 2), 200, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Content-Disposition": `attachment; filename="${exportFilename(date)}"`,
+    "Cache-Control": "no-store",
+  });
 });
 
 app.route("/api", api);

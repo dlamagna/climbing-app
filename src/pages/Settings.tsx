@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { savedToast, send, setToken, useApi } from "../api";
+import { fetchFile, savedToast, send, setToken, toast, useApi } from "../api";
 import { Card, Field, PageHeader } from "../components/ui";
 
 // Free-form profile facts; Claude reads all of them when planning.
@@ -12,6 +12,33 @@ const FIELDS = [
   { key: "gym_setup", label: "Equipment", placeholder: "e.g. Beastmaker 1000 at home, gym has a Moonboard" },
 ];
 
+const isStandalone = () =>
+  matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
+
+// A home-screen web app on iOS has no download UI (a blob link opens a preview you can't leave), so
+// there the file goes to the share sheet, which has "Save to Files". Elsewhere it's a normal download.
+async function saveFile(file: File) {
+  if (isStandalone() && navigator.canShare?.({ files: [file] })) {
+    const share = () => navigator.share({ files: [file] }).catch(() => {});
+    try {
+      await navigator.share({ files: [file] });
+    } catch (e) {
+      // Safari can expire the tap's permission while the export downloads; a second tap shares it.
+      if ((e as Error).name === "NotAllowedError") toast("Export ready", { label: "Save", run: share }, 15000);
+      // AbortError: the share sheet was closed.
+    }
+    return;
+  }
+  const url = URL.createObjectURL(file);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = file.name;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
 export default function Settings() {
   const { data } = useApi<Record<string, string>>("/profile");
   const [profile, setProfile] = useState<Record<string, string>>({});
@@ -20,6 +47,18 @@ export default function Settings() {
   async function save() {
     const values = Object.fromEntries(FIELDS.map((f) => [f.key, profile[f.key]?.trim() || null]));
     savedToast(await send("PUT", "/profile", values), "Profile saved");
+  }
+
+  const [exporting, setExporting] = useState(false);
+  async function exportData() {
+    setExporting(true);
+    try {
+      await saveFile(await fetchFile("/export"));
+    } catch (e) {
+      toast(e instanceof TypeError ? "Export needs a connection" : (e as Error).message);
+    } finally {
+      setExporting(false);
+    }
   }
 
   function signOut() {
@@ -50,6 +89,12 @@ export default function Settings() {
         <p className="small">Add a custom connector in Claude (Settings → Connectors) with this URL, using your MCP token:</p>
         <code className="block-code">{location.origin}/mcp/&lt;MCP_TOKEN&gt;</code>
         <p className="small">Then ask things like <em>"How should I train today?"</em> or <em>"How did my sleep and drinking affect my sessions this month?"</em></p>
+      </Card>
+      <Card title="Your data">
+        <p className="small">Download everything you've logged as one JSON file, to keep as a backup or open elsewhere.</p>
+        <button className="btn block" onClick={exportData} disabled={exporting}>
+          {exporting ? "Exporting..." : "Export my data"}
+        </button>
       </Card>
       <button className="btn danger block" onClick={signOut}>Sign out of this phone</button>
     </div>

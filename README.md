@@ -77,6 +77,34 @@ Cloudflare secrets and in your git-ignored `.tokens` file. Anyone can deploy the
 own database, but they can't read yours. The `database_id` in `wrangler.jsonc` is fine to publish: it's
 useless without access to the Cloudflare account it belongs to.
 
+## Export and backup
+
+**Export.** More → Profile & settings → *Export my data* downloads one JSON file with every table
+(`climbing-export-YYYY-MM-DD.json`). On an iPhone home-screen app it opens the share sheet instead:
+pick *Save to Files*. The same file comes from the API:
+
+```sh
+curl -H "Authorization: Bearer $APP_TOKEN" -OJ https://climbing-app.<you>.workers.dev/api/export
+# one table as CSV, e.g. sessions:
+curl -H "Authorization: Bearer $APP_TOKEN" -OJ "https://climbing-app.<you>.workers.dev/api/export?format=csv&table=sessions"
+```
+
+The JSON is `{exported_at, schema_version, docs, tables: {name: rows[]}}`. `schema_version` is the last
+applied migration and `docs` holds the column descriptions from `worker/schema-docs.ts`, so the file
+makes sense on its own. Tables added by later migrations are included automatically.
+
+**Undo a mistake: D1 Time Travel.** D1 keeps a point-in-time history of the database (the last 7 days
+on the Workers free plan, 30 days on paid), so a wrong `set_plan` or an accidental delete can be rolled
+back. Nothing to set up:
+
+```sh
+npx wrangler d1 time-travel info climbing                                     # current bookmark, to undo the restore later
+npx wrangler d1 time-travel restore climbing --timestamp=2026-10-01T08:00:00Z # Unix time or RFC 3339
+```
+
+A restore **overwrites the whole database** with its state at that moment: everything logged since is
+lost (export first if you want to keep it). The restore prints a bookmark you can restore to undo it.
+
 ## Develop
 
 ```sh
@@ -96,6 +124,7 @@ Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:loc
 | `worker/mcp-writes.ts` | MCP tools that report/update/resolve injuries and edit/delete sessions |
 | `worker/injuries.ts`, `sessions.ts`, `checkins.ts` | Validation and writes shared by the REST API and MCP (partial updates via `worker/partial.ts`) |
 | `worker/db.ts` | Queries shared by both, including training-load maths |
+| `worker/export.ts` | `GET /api/export` helpers: table list, CSV, filename |
 | `migrations/` | Schema and default timer presets (D1 strips SQL comments; column docs for `get_schema` live in `worker/schema-docs.ts`) |
 | `src/pages/` | Today, Log, Timer, History, Plan, Injuries, Benchmarks, Settings |
 | `src/timer.ts` | Hangboard phase sequencing, beeps, screen wake lock |
