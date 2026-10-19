@@ -9,6 +9,7 @@ import {
   parseExpectedBenchmarks,
 } from "./benchmarks";
 import { CHECKIN_COLUMNS, checkinUpsertSql } from "./checkins";
+import { lastRun, lastUpdate, openQuestions, pendingQuestions } from "./coach";
 import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, mondayOf, type LoadRow } from "./load";
 import { allColumns } from "./partial";
 import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, weekSummary } from "./plan";
@@ -27,6 +28,7 @@ export interface Env {
   MCP_TOKEN?: string;
   GITHUB_TOKEN?: string; // optional, enables the issue tools (see worker/github.ts)
   GITHUB_REPO?: string; // "owner/repo"
+  GITHUB_ROADMAP_ISSUE?: string; // optional: number of the roadmap issue new issues are listed in
 }
 
 type Row = Record<string, unknown>;
@@ -157,18 +159,31 @@ export interface PlanEntry {
   expected_benchmarks?: ExpectedBenchmark[] | null; // tests planned that day, see worker/benchmarks.ts
 }
 
+export type PlanSource = "coach" | "app";
+
+export interface SetPlanOptions {
+  source: PlanSource; // who is writing: Claude via MCP, or the climber in the app
+  keepAppEntries?: boolean; // when replacing, keep entries added by hand or with a status picked by hand (#52)
+}
+
 // Writes plan entries. With replaceDates, existing entries on those dates are removed first,
 // so re-planning a week doesn't leave duplicates behind (their status overrides and pinned session links go
-// with them; statuses are re-derived against the new entries).
-export async function setPlan(db: D1Database, entries: PlanEntry[], replaceDates: boolean) {
+// with them; statuses are re-derived against the new entries). keepAppEntries limits that to coach entries
+// (source 'coach', or NULL from before the column existed) with no status override.
+export async function setPlan(db: D1Database, entries: PlanEntry[], replaceDates: boolean, opts: SetPlanOptions) {
   const dates = [...new Set(entries.map((e) => e.date))];
   const expected = entries.map((e) => encodeExpected(parseExpectedBenchmarks(e.expected_benchmarks)));
+  const replace = opts.keepAppEntries
+    ? "DELETE FROM plan WHERE date = ? AND (source IS NULL OR source = 'coach') AND status_override IS NULL"
+    : "DELETE FROM plan WHERE date = ?";
   const stmts = [
-    ...(replaceDates ? dates.map((d) => db.prepare("DELETE FROM plan WHERE date = ?").bind(d)) : []),
+    ...(replaceDates ? dates.map((d) => db.prepare(replace).bind(d)) : []),
     ...entries.map((e, i) =>
       db
-        .prepare("INSERT INTO plan (date, title, type, intensity, details, duration_min, expected_benchmarks) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        .bind(e.date, e.title, e.type ?? null, e.intensity ?? null, e.details ?? null, e.duration_min ?? null, expected[i]),
+        .prepare(
+          "INSERT INTO plan (date, title, type, intensity, details, duration_min, expected_benchmarks, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .bind(e.date, e.title, e.type ?? null, e.intensity ?? null, e.details ?? null, e.duration_min ?? null, expected[i], opts.source),
     ),
   ];
   if (stmts.length) await db.batch(stmts);
@@ -302,7 +317,7 @@ function weekSummaryOf(
 }
 
 export async function todayView(db: D1Database, today: string) {
-  const [checkin, lastCheckin, plan, coachNotes, sessions, injuries, load, week] = await Promise.all([
+  const [checkin, lastCheckin, plan, coachNotes, sessions, injuries, load, week, questions, coachUpdate] = await Promise.all([
     db.prepare("SELECT * FROM checkins WHERE date = ?").bind(today).first(),
     db.prepare("SELECT * FROM checkins WHERE date < ? ORDER BY date DESC LIMIT 1").bind(today).first(),
     getPlan(db, mondayOf(today), addDays(today, 6), today), // from Monday for the week-so-far line
@@ -311,6 +326,8 @@ export async function todayView(db: D1Database, today: string) {
     activeInjuries(db),
     loadStats(db, today, 4),
     weekCheckins(db, today),
+    openQuestions(db, today),
+    lastUpdate(db),
   ]);
   return {
     today,
@@ -324,6 +341,8 @@ export async function todayView(db: D1Database, today: string) {
     load,
     readiness: todayReadiness(today, checkin, load, plan, injuries),
     week: weekSummaryOf(today, week, load, plan),
+    coach_questions: questions,
+    coach_update: coachUpdate, // the last daily review that changed something (#52)
   };
 }
 
@@ -346,7 +365,7 @@ function todayReadiness(
 // Everything Claude needs to answer "how should I train today?" in one call.
 export async function overview(db: D1Database, today: string, days: number) {
   const from = addDays(today, -(days - 1));
-  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests, mixRows, week, gyms] = await Promise.all([
+  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests, mixRows, week, gyms, questions, run] = await Promise.all([
     getProfile(db),
     activeInjuries(db),
     loadStats(db, today, 6),
@@ -359,6 +378,8 @@ export async function overview(db: D1Database, today: string, days: number) {
     all<MixSession>(db, "SELECT date, type, duration_min, rpe, outdoor FROM sessions WHERE date BETWEEN ? AND ?", addDays(today, -27), today),
     weekCheckins(db, today),
     knownGyms(db),
+    pendingQuestions(db, today),
+    lastRun(db),
   ]);
   return {
     today,
@@ -381,6 +402,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     recent_coach_notes: coachNotes,
     benchmarks,
     ...tests,
+    coach: { open_questions: questions.open, answered_questions: questions.answered, last_run: run },
   };
 }
 

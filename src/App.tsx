@@ -2,6 +2,7 @@ import { type ComponentType, useEffect, useState } from "react";
 import { type ToastMessage, checkToken, flushOutbox, get, getToken, pendingCount, send, setToken, toast } from "./api";
 import Benchmarks from "./pages/Benchmarks";
 import CheckinEdit from "./pages/CheckinEdit";
+import Feedback from "./pages/Feedback";
 import History from "./pages/History";
 import Injuries from "./pages/Injuries";
 import Log from "./pages/Log";
@@ -22,6 +23,7 @@ const ROUTES: Record<string, ComponentType> = {
   injuries: Injuries,
   benchmarks: Benchmarks,
   settings: Settings,
+  feedback: Feedback,
 };
 
 const TABS = [
@@ -31,7 +33,7 @@ const TABS = [
   { route: "history", label: "History", icon: "▤" },
   { route: "more", label: "More", icon: "≡" },
 ];
-const MORE_ROUTES = ["more", "plan", "injuries", "benchmarks", "settings"];
+const MORE_ROUTES = ["more", "plan", "injuries", "benchmarks", "settings", "feedback"];
 
 const currentPath = () => location.hash.replace(/^#\/?/, "");
 

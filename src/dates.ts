@@ -9,6 +9,9 @@ const parse = (date: string) => {
 
 export const localToday = () => fmt(new Date());
 
+// The local calendar date of a UTC timestamp such as a row's created_at.
+export const localDateOf = (stamp: string) => fmt(new Date(stamp));
+
 export function addDays(date: string, days: number): string {
   const d = parse(date);
   d.setDate(d.getDate() + days);

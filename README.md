@@ -69,6 +69,35 @@ npx wrangler secret put GITHUB_TOKEN
 
 Without the secret, the two tools are hidden.
 
+Issues filed this way can carry a priority (`priority: P0`/`P1`/`P2` labels, which must exist in the repo)
+and a milestone, and are added to the checklist in the roadmap issue named by `GITHUB_ROADMAP_ISSUE` in
+`wrangler.jsonc` (under the milestone's `### <title>` heading, or an inbox section).
+
+### Optional: daily coach review
+
+A scheduled Claude run can review your data once a day, without an API key: it runs as a Claude Code
+routine on your own Claude subscription and reaches the data through the same connector.
+
+Each run calls `start_daily_review`. If nothing new was logged since the last run, it records that and
+stops. Otherwise it:
+- adjusts the next 7 days of the plan. It leaves today, past days, and entries you added or marked by hand
+  alone.
+- may leave a short coach note.
+- may ask you up to a couple of questions. They appear on the Today screen as one-tap cards, and the next
+  run reads your answers.
+- triages anything you sent under More → App feedback: a duplicate, declined, or filed as a GitHub issue
+  with a priority (needs the GitHub token above). Issues are written in general terms, without copying
+  your feedback.
+
+Every run is logged, and the Today screen shows what the last review changed.
+
+To set it up, in Claude Code run `/schedule` (or create a routine on claude.ai/code). Pick a daily time
+after you usually train, for example 22:00, attach the climbing-app connector, and use this prompt:
+
+> Run the daily coach review for the climbing app: call start_daily_review and follow its instructions exactly.
+
+The same text is the connector's `daily_review` prompt, so you can also run a review by hand.
+
 ## Your data stays private
 
 The code is public; the data isn't. Everything you log lives in your own D1 database in your own
@@ -122,11 +151,12 @@ Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:loc
 | `worker/index.ts` | REST API for the app (bearer `APP_TOKEN`) and MCP routing (`MCP_TOKEN`) |
 | `worker/mcp.ts` | MCP server: tools, plus instructions telling Claude how to coach from the data |
 | `worker/mcp-writes.ts` | MCP tools that report/update/resolve injuries and edit/delete sessions |
+| `worker/coach.ts`, `mcp-coach.ts` | Daily coach review: what changed since the last run, questions, run log, app feedback |
 | `worker/injuries.ts`, `sessions.ts`, `checkins.ts` | Validation and writes shared by the REST API and MCP (partial updates via `worker/partial.ts`) |
 | `worker/db.ts` | Queries shared by both, including training-load maths |
 | `worker/export.ts` | `GET /api/export` helpers: table list, CSV, filename |
 | `migrations/` | Schema and default timer presets (D1 strips SQL comments; column docs for `get_schema` live in `worker/schema-docs.ts`) |
-| `src/pages/` | Today, Log, Timer, History, Plan, Injuries, Benchmarks, Settings |
+| `src/pages/` | Today, Log, Timer, History, Plan, Injuries, Benchmarks, Settings, Feedback |
 | `src/timer.ts` | Hangboard phase sequencing, beeps, screen wake lock |
 
 Training load = minutes × effort (1-10), compared with your average week over the previous four.

@@ -5,6 +5,7 @@ const LINKS = [
   { href: "#/injuries", title: "Injuries", sub: "Report one - adds a daily pain check until it's healed" },
   { href: "#/benchmarks", title: "Benchmarks", sub: "Test results and bodyweight over time" },
   { href: "#/settings", title: "Profile & settings", sub: "Goal, trip, availability, connecting Claude" },
+  { href: "#/feedback", title: "App feedback", sub: "Bugs and ideas - the coach turns them into GitHub issues" },
 ];
 
 export default function More() {
