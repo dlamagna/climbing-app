@@ -15,6 +15,7 @@ Personal data includes anything read through `get_overview` or `query`, or from 
 - Test data is made up. Don't copy real notes, injuries or numbers into fixtures, even with small changes.
 - **Issues, PRs and comments must contain nothing personal.** Before creating or editing one, reread it for details that came from real data. Issues filed from the Claude app through `report_issue` follow the same rule. If an existing one turns out to contain personal data, rewrite it, and tell the owner to delete the old version from its "edited" history, since GitHub keeps every earlier version publicly visible.
 - Never commit `.dev.vars`, `.tokens`, database exports or token values.
+- CI's `scan` job fails on committed secrets (gitleaks) and on any phrase from the `PERSONAL_DENYLIST` repo secret, checking files and every commit's message and author. To block a new personal phrase, add it to that secret (`gh secret set PERSONAL_DENYLIST`), never to a file in the repo. The check is a safety net, not a substitute for rereading.
 
 ## Git
 

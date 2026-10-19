@@ -33,8 +33,51 @@ jobs:
       - run: npm test --if-present
       - run: npm run build # typechecks the app and the worker, then builds dist/
 
+  # The repo is public: fail on committed secrets or on the owner's personal details.
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # whole history, so both checks see every commit
+
+      # Tokens and keys, including generic high-entropy ones like APP_TOKEN / MCP_TOKEN.
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false
+
+      # PERSONAL_DENYLIST is a repo secret: one case-insensitive phrase per line (email, city, ...).
+      # Keeping the list in a secret means the phrases themselves are never published. Only file
+      # names and commit ids are printed, never the matching text. Forks don't get the secret, so
+      # their PRs skip this step.
+      - name: Personal data check
+        env:
+          PERSONAL_DENYLIST: ${{ secrets.PERSONAL_DENYLIST }}
+        run: |
+          if [ -z "$PERSONAL_DENYLIST" ]; then
+            echo "::notice::PERSONAL_DENYLIST is not set; skipping."
+            exit 0
+          fi
+          list=$(mktemp)
+          printf '%s\n' "$PERSONAL_DENYLIST" | sed '/^[[:space:]]*$/d' > "$list"
+          found=0
+          if files=$(git grep -lIiF -f "$list"); then
+            echo "::error::Personal data in these files:"
+            echo "$files"
+            found=1
+          fi
+          for c in $(git rev-list HEAD); do
+            if git show -s --format='%an%n%ae%n%cn%n%ce%n%B' "$c" | grep -qiF -f "$list"; then
+              echo "::error::Personal data in the message or author of commit $c"
+              found=1
+            fi
+          done
+          exit $found
+
   deploy:
-    needs: build
+    needs: [build, scan]
     if: >-
       github.ref == 'refs/heads/main' &&
       (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
