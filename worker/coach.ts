@@ -7,13 +7,16 @@
 // Validation and the "is a review needed" call are pure (coach.test.ts); the D1 queries are below them.
 
 import { BadRequest, NotFound } from "./errors";
+import { NOT_THIS_WEEK, WEEK_TOPIC } from "./coachTopics";
 import { isIsoDate } from "./injury-dates";
-import { addDays } from "./load";
+import { addDays, daysBetween, mondayOf } from "./load";
+
+export { NOT_THIS_WEEK, WEEK_TOPIC };
 
 export const MAX_OPEN_QUESTIONS = 3;
 export const DEFAULT_EXPIRY_DAYS = 3;
 export const MAX_EXPIRY_DAYS = 14;
-export const MAX_OPTIONS = 6;
+export const MAX_OPTIONS = 8;
 const MAX_QUESTION = 300;
 const MAX_OPTION = 40;
 const MAX_ANSWER = 1000;
@@ -33,6 +36,8 @@ export interface QuestionRow {
   why: string | null;
   options: string | null; // JSON array
   allow_text: number;
+  multi: number; // 1 = several chips can be picked
+  topic: string | null; // set on questions the server creates (WEEK_TOPIC)
   expires_on: string | null;
   answer: string | null;
   answered_at: string | null;
@@ -52,6 +57,7 @@ export interface NewQuestion {
   why: string | null;
   options: string[];
   allow_text: boolean;
+  multi: boolean;
   expires_on: string | null;
 }
 
@@ -109,6 +115,8 @@ export function parseQuestion(a: Record<string, unknown>, today: string): NewQue
   if (new Set(options.map((o) => o.toLowerCase())).size !== options.length) throw new BadRequest("options must be different");
   if (a.allow_text !== undefined && typeof a.allow_text !== "boolean") throw new BadRequest("allow_text must be true or false");
   const allow_text = options.length === 0 ? true : a.allow_text !== false;
+  if (a.multi !== undefined && typeof a.multi !== "boolean") throw new BadRequest("multi must be true or false");
+  const multi = options.length > 0 && a.multi === true;
   let expires_on: string | null = addDays(today, DEFAULT_EXPIRY_DAYS);
   if (a.expires_on === null) expires_on = null;
   else if (a.expires_on !== undefined) {
@@ -117,21 +125,59 @@ export function parseQuestion(a: Record<string, unknown>, today: string): NewQue
     if (a.expires_on > addDays(today, MAX_EXPIRY_DAYS)) throw new BadRequest(`expires_on must be within ${MAX_EXPIRY_DAYS} days`);
     expires_on = a.expires_on;
   }
-  return { question, why, options, allow_text, expires_on };
+  return { question, why, options, allow_text, multi, expires_on };
 }
 
 export type AnswerInput = { answer: string } | { skip: true };
 
-// The app's answer: { answer: "..." } or { skip: true }. A chip answer must be one of the options unless free
-// text is allowed.
-export function parseAnswer(body: unknown, q: Pick<Question, "options" | "allow_text">): AnswerInput {
+// The app's answer: { answer: "..." } or { skip: true }. A chip answer must be one of the options (a multi
+// question: a comma-separated list of them) unless free text is allowed.
+export function parseAnswer(body: unknown, q: Pick<Question, "options" | "allow_text" | "multi">): AnswerInput {
   const b = (body ?? {}) as Record<string, unknown>;
   if (b.skip === true) return { skip: true };
   const answer = text(b.answer, "answer", MAX_ANSWER, true)!;
-  if (!q.allow_text && q.options.length && !q.options.includes(answer)) {
-    throw new BadRequest(`answer must be one of ${q.options.join(", ")}`);
+  if (!q.allow_text && q.options.length) {
+    const picked = q.multi ? answer.split(",").map((x) => x.trim()) : [answer];
+    if (!picked.every((x) => q.options.includes(x))) throw new BadRequest(`answer must be ${q.multi ? "some" : "one"} of ${q.options.join(", ")}`);
   }
   return { answer };
+}
+
+// The weekly question (#54): created by the server on the first app open (or review) from Monday to
+// WEEKLY_LAST_OFFSET days later, once per week, with a chip per remaining day; it expires on Sunday.
+export const WEEKLY_LAST_OFFSET = 2; // Wednesday
+export const WEEKLY_QUESTION = "Which days do you plan to climb this week?";
+
+// "Mon 19", in English like the rest of the server's text.
+export const dayChip = (date: string) =>
+  new Date(`${date}T00:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", timeZone: "UTC" });
+
+export function weeklyQuestion(today: string): (NewQuestion & { topic: string }) | null {
+  const monday = mondayOf(today);
+  const offset = daysBetween(monday, today);
+  if (offset > WEEKLY_LAST_OFFSET) return null;
+  const days = Array.from({ length: 7 - offset }, (_, i) => dayChip(addDays(today, i)));
+  return {
+    question: WEEKLY_QUESTION,
+    why: "The coach plans this week's climbing on those days. Add a note for anything else (evenings only, a day outdoors...).",
+    options: [...days, NOT_THIS_WEEK],
+    allow_text: true,
+    multi: true,
+    expires_on: addDays(monday, 6),
+    topic: `${WEEK_TOPIC}:${monday}`,
+  };
+}
+
+export async function ensureWeeklyQuestion(db: D1Database, today: string): Promise<void> {
+  const q = weeklyQuestion(today);
+  if (!q) return;
+  await db
+    .prepare(
+      `INSERT INTO coach_questions (question, why, options, allow_text, multi, expires_on, topic) VALUES (?, ?, ?, 1, 1, ?, ?)
+       ON CONFLICT (topic) DO NOTHING`,
+    )
+    .bind(q.question, q.why, JSON.stringify(q.options), q.expires_on, q.topic)
+    .run();
 }
 
 export function parseRun(a: Record<string, unknown>, now: string): CoachRun {
@@ -247,6 +293,12 @@ the climber anything in chat, work only through these tools.
 3. Answers: use each answered question. Lasting facts (a trip, availability, a goal, a gym) go to the profile
    with update_profile; short-lived ones (this week's intentions, how a session felt) go straight into the
    plan. Then call close_questions with the ids you used. Close skipped questions too.
+   The weekly question (topic "${WEEK_TOPIC}:<Monday>", "${WEEKLY_QUESTION}") is created by the app every
+   week: its answer lists day chips like "Tue 20" (dates of that week), maybe "${NOT_THIS_WEEK}", and maybe a
+   note after " - ". Put that week's climbing sessions on those days only, and keep the other days for rest or
+   light non-climbing work; "${NOT_THIS_WEEK}" means no climbing sessions that week. It is this week's
+   availability, not a lasting fact: don't save it to the profile. Don't ask it yourself; while it is open,
+   plan from profile weekly_availability.
 
 4. Plan: keep the next 7 days filled, starting tomorrow. Change only what the new data calls for; if the
    plan still fits, leave it. Rewrite with set_plan and keep_app_entries: true (entries the climber added or
@@ -322,9 +374,9 @@ export async function askQuestion(db: D1Database, q: NewQuestion, today: string)
   const run = await db.prepare("SELECT id FROM coach_runs ORDER BY id DESC LIMIT 1").first<{ id: number }>();
   const row = await db
     .prepare(
-      "INSERT INTO coach_questions (question, why, options, allow_text, expires_on, run_id) VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
+      "INSERT INTO coach_questions (question, why, options, allow_text, multi, expires_on, run_id) VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
     )
-    .bind(q.question, q.why, q.options.length ? JSON.stringify(q.options) : null, q.allow_text ? 1 : 0, q.expires_on, run?.id ?? null)
+    .bind(q.question, q.why, q.options.length ? JSON.stringify(q.options) : null, q.allow_text ? 1 : 0, q.multi ? 1 : 0, q.expires_on, run?.id ?? null)
     .first<{ id: number }>();
   return { id: row!.id, existing: false };
 }
@@ -481,6 +533,7 @@ export async function plannedDaysAhead(db: D1Database, today: string): Promise<n
 // start_daily_review: the cheap first call of every run.
 export async function startReview(db: D1Database, today: string) {
   const checked_at = nowStamp();
+  await ensureWeeklyQuestion(db, today);
   const last = await lastRun(db);
   const [changes, ahead, pending] = await Promise.all([
     changesSince(db, last, today),

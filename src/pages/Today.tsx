@@ -14,7 +14,7 @@ import {
 } from "../components/injury";
 import { testsLabel } from "../benchmarkInputs";
 import { ProfileInjuryBanner } from "../components/profileInjury";
-import { CoachQuestions, CoachUpdate, recentUpdate } from "../components/coach";
+import { CoachQuestions, CoachUpdate, WeeklyPopup, recentUpdate } from "../components/coach";
 import { PlanFlags, StatusChip, WeekSoFar } from "../components/planStatus";
 import { WeekSummary } from "../components/WeekSummary";
 import { Card, Chips, DatePicker, Field, Stepper, range } from "../components/ui";
@@ -35,6 +35,7 @@ export default function Today() {
   const upcoming = data.plan.filter((p) => p.date > today);
   const note = data.coach_notes[0];
   const update = recentUpdate(data.coach_update, today);
+  const answered = (id: number) => setData({ ...data, coach_questions: (data.coach_questions ?? []).filter((q) => q.id !== id) });
 
   return (
     <div className="page">
@@ -75,10 +76,8 @@ export default function Today() {
 
       <ReadinessBanner readiness={data.readiness} />
 
-      <CoachQuestions
-        questions={data.coach_questions ?? []}
-        onAnswered={(id) => setData({ ...data, coach_questions: (data.coach_questions ?? []).filter((q) => q.id !== id) })}
-      />
+      <WeeklyPopup questions={data.coach_questions ?? []} today={today} onAnswered={answered} />
+      <CoachQuestions questions={data.coach_questions ?? []} onAnswered={answered} />
 
       {(note || update) && (
         <Card title={note ? `Coach · ${dayLabel(note.date, today)}` : "Coach"}>

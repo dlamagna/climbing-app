@@ -1198,3 +1198,24 @@ button {
 .feedback-list p {
   margin: 0 0 4px;
 }
+.popup-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+  background: rgba(0, 0, 0, 0.45);
+}
+.popup {
+  width: 100%;
+  max-width: 520px;
+  max-height: 85vh;
+  overflow-y: auto;
+  margin: 0;
+}
+.popup .coach-question {
+  border-bottom: none;
+  padding: 0;
+}
