@@ -731,6 +731,24 @@ button {
   flex: 0 0 auto;
 }
 
+/* Outdoor session (#33): an outline ring around the marker, in the text colour so it shows in light and
+   dark mode and doesn't depend on the group colour. The gap ring uses the day cell's background. */
+.marker.outdoor {
+  box-shadow:
+    0 0 0 1.5px var(--ring-gap, var(--surface-2)),
+    0 0 0 3px var(--text);
+  margin: 2px;
+}
+.marker.outdoor-key {
+  --g: transparent;
+  --ring-gap: var(--surface);
+  color: var(--text);
+}
+.cal-list .marker.outdoor,
+.legend .marker.outdoor {
+  --ring-gap: var(--surface);
+}
+
 /* Calendar */
 .cal-nav {
   display: flex;

@@ -68,11 +68,12 @@ describe("trainingChecklist", () => {
       [
         "Training log - Sun 18 Oct (today)",
         "- Date, if not Sun 18 Oct",
-        "- Type: boulder, board, lead, hangboard, strength, cardio, mobility, other",
+        "- Type: boulder, board, lead, toprope, hangboard, strength, cardio, mobility, other",
         "- Duration (minutes), effort 1-10",
         "- Hardest send",
         "- What you worked on, how your fingers felt",
         "- Optional: style tags (crimpy, open-hand, slab, vertical, overhang, board, technique, projecting, volume)",
+        "- Optional: indoor or outdoor? (boulder, board, lead, toprope only; indoor if not said)",
         "- Nothing planned for Sun 18 Oct. Was this a planned session from another day?",
         "- Optional: any test / benchmark results",
         "- Optional: new tweak or injury",

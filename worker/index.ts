@@ -37,7 +37,7 @@ import {
 } from "./injuries";
 import { tagsColumn, tagsError } from "./tags";
 import { handleMcp } from "./mcp";
-import { deleteSession } from "./sessions";
+import { deleteSession, outdoorColumn, outdoorError } from "./sessions";
 import { PLAN_STATUSES, isPlanStatus } from "./plan";
 import { deleteTimerSession, insertTimerLog, setTimerSessionRpe } from "./timerLog";
 import { isRpe } from "./timerSession";
@@ -77,9 +77,12 @@ async function sessionBody(c: C) {
   if (s.plan_id != null && !Number.isInteger(s.plan_id)) throw new BadRequest("plan_id must be an integer");
   const tagError = tagsError(s.tags, s.type);
   if (tagError) throw new BadRequest(tagError);
+  const outError = outdoorError(s.outdoor, s.type);
+  if (outError) throw new BadRequest(outError);
   if (s.new_injury) parseNewInjury(s.new_injury);
   s.benchmark_writes = badRequestOn(() => sessionBenchmarkWrites(s.benchmarks));
   s.tags = tagsColumn(s.tags); // missing tags clear them on edit, like the other optional fields
+  s.outdoor = outdoorColumn(s.outdoor); // missing = indoors (also on edit)
   return s;
 }
 

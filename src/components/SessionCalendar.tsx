@@ -4,6 +4,9 @@ import { useState } from "react";
 import { monthGrid, monthLabel, monthOf, sessionsByDay, shiftMonth } from "../calendar";
 import { dayLabel } from "../dates";
 import { type Session, groupOf, typeLabel } from "../types";
+
+// "Top rope (outdoor)": the day's accessible label and the list both say it, not only the ring.
+const sessionLabel = (s: Session) => `${typeLabel(s.type)}${s.outdoor ? " (outdoor)" : ""}`;
 import { GroupLegend, GroupMarker } from "./typeGroups";
 
 const DOW = ["M", "T", "W", "T", "F", "S", "S"];
@@ -58,13 +61,13 @@ export function SessionCalendar({
             const cls = ["cal-day", date === today && "today", date > today && "future", date === picked && "picked"]
               .filter(Boolean)
               .join(" ");
-            const label = `${dayLabel(date, today)}: ${list.length ? list.map((s) => typeLabel(s.type)).join(", ") : "nothing logged"}`;
+            const label = `${dayLabel(date, today)}: ${list.length ? list.map(sessionLabel).join(", ") : "nothing logged"}`;
             return (
               <button key={date} type="button" className={cls} aria-label={label} aria-pressed={date === picked} onClick={() => setPicked(date)}>
                 <span className="num">{Number(date.slice(8))}</span>
                 <span className="cal-marks">
                   {list.map((s) => (
-                    <GroupMarker key={s.id} group={groupOf(s.type)} title={typeLabel(s.type)} />
+                    <GroupMarker key={s.id} group={groupOf(s.type)} title={typeLabel(s.type)} outdoor={Boolean(s.outdoor)} />
                   ))}
                 </span>
               </button>
@@ -77,10 +80,10 @@ export function SessionCalendar({
           <strong className="small">{dayLabel(picked!, today)}</strong>
           {pickedList.length === 0 && <p className="muted small">No sessions logged.</p>}
           {pickedList.map((s) => (
-            <a key={s.id} href={`#/log?edit=${s.id}`} aria-label={`Edit ${typeLabel(s.type)} session`}>
-              <GroupMarker group={groupOf(s.type)} />
+            <a key={s.id} href={`#/log?edit=${s.id}`} aria-label={`Edit ${sessionLabel(s)} session`}>
+              <GroupMarker group={groupOf(s.type)} outdoor={Boolean(s.outdoor)} />
               <span>
-                <strong>{typeLabel(s.type)}</strong> {s.duration_min} min · effort {s.rpe}
+                <strong>{typeLabel(s.type)}</strong> {s.duration_min} min{s.outdoor ? " · outdoor" : ""} · effort {s.rpe}
                 {s.max_grade && ` · ${s.max_grade}`}
                 <span className="muted"> · load {s.duration_min * s.rpe}</span>
               </span>

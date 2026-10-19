@@ -3,7 +3,7 @@
 import { fingerWeight } from "./tags";
 
 // Session types that load the fingers; tracked separately because tendons adapt slower than muscle.
-export const FINGER_TYPES = ["boulder", "board", "lead", "hangboard"];
+export const FINGER_TYPES = ["boulder", "board", "lead", "toprope", "hangboard"];
 
 export function addDays(date: string, days: number): string {
   const d = new Date(`${date}T00:00:00Z`);
