@@ -14,6 +14,7 @@ import {
   NOT_THIS_WEEK,
   NO_CLIMBING,
   climbingDaysAnswer,
+  climbingDaysContext,
   closeQuestions,
   currentClimbingDays,
   ensureWeeklyQuestion,
@@ -132,6 +133,42 @@ describe("parseClimbingDays", () => {
   it("writes the answer like the weekly one", () => {
     expect(climbingDaysAnswer({ days: ["2026-05-11", "2026-05-14"], note: "evenings" })).toBe("Mon 11, Thu 14 - evenings");
     expect(climbingDaysAnswer({ days: [], note: null })).toBe(NO_CLIMBING);
+  });
+});
+
+describe("climbingDaysContext", () => {
+  const row = (topic: string, answer: string, expires_on: string) => ({ topic, answer, expires_on, answered_at: "2026-05-04T08:00:00Z" });
+
+  it("turns the weekly answer's chips into dates, with the note", () => {
+    expect(climbingDaysContext(row("week_days:2026-05-04", "Tue 5, Sat 9 - evenings - maybe outdoors", "2026-05-10"))).toEqual({
+      source: "weekly question",
+      set_at: "2026-05-04T08:00:00Z",
+      from: "2026-05-04",
+      to: "2026-05-10",
+      days: ["2026-05-05", "2026-05-09"],
+      no_climbing: false,
+      note: "evenings - maybe outdoors",
+      answer: "Tue 5, Sat 9 - evenings - maybe outdoors",
+    });
+  });
+
+  it("reads the button's window across a month end, and no climbing", () => {
+    expect(climbingDaysContext(row("climb_days:2026-05-29", "Sun 31, Tue 2", "2026-06-04"))).toMatchObject({
+      source: "Plan my climbing days",
+      days: ["2026-05-31", "2026-06-02"],
+      note: null,
+    });
+    expect(climbingDaysContext(row("climb_days:2026-05-29", NO_CLIMBING, "2026-06-04"))).toMatchObject({ days: [], no_climbing: true });
+    expect(climbingDaysContext(row("week_days:2026-05-04", NOT_THIS_WEEK, "2026-05-10"))).toMatchObject({ days: [], no_climbing: true });
+  });
+
+  it("keeps a typed answer without chips as the note", () => {
+    expect(climbingDaysContext(row("week_days:2026-05-04", "probably two evenings", "2026-05-10"))).toMatchObject({
+      days: [],
+      no_climbing: false,
+      note: "probably two evenings",
+    });
+    expect(climbingDaysContext(null)).toBeNull();
   });
 });
 
@@ -384,6 +421,15 @@ describe("questions", () => {
     await answerQuestion(db, q.id, { answer: "Tue 5" }, "2026-05-04");
     await setClimbingDays(db, { days: ["2026-05-07"] }, "2026-05-05");
     expect((await pendingQuestions(db, "2026-05-05")).answered.map((x) => x.topic)).toEqual(["week_days:2026-05-04", "climb_days:2026-05-05"]);
+  });
+
+  it("start_daily_review keeps showing the picked days after the coach closed the question", async () => {
+    await setClimbingDays(db, { days: ["2026-05-12", "2026-05-15"] }, TODAY);
+    const [q] = (await pendingQuestions(db, TODAY)).answered;
+    await closeQuestions(db, [q.id]);
+    const r = await startReview(db, TODAY);
+    expect(r.climbing_days).toMatchObject({ source: "Plan my climbing days", days: ["2026-05-12", "2026-05-15"], from: TODAY, to: "2026-05-16" });
+    expect(r.changes.answered_questions).toEqual([]);
   });
 
   it("start_daily_review creates the weekly question too", async () => {

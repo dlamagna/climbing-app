@@ -9,7 +9,7 @@ import {
   parseExpectedBenchmarks,
 } from "./benchmarks";
 import { CHECKIN_COLUMNS, checkinUpsertSql } from "./checkins";
-import { currentClimbingDays, ensureWeeklyQuestion, lastRun, lastUpdate, openQuestions, pendingQuestions } from "./coach";
+import { climbingDaysContext, currentClimbingDays, ensureWeeklyQuestion, lastRun, lastUpdate, openQuestions, pendingQuestions } from "./coach";
 import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, mondayOf, type LoadRow } from "./load";
 import { allColumns } from "./partial";
 import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, weekSummary } from "./plan";
@@ -368,7 +368,7 @@ function todayReadiness(
 // Everything Claude needs to answer "how should I train today?" in one call.
 export async function overview(db: D1Database, today: string, days: number) {
   const from = addDays(today, -(days - 1));
-  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests, mixRows, week, gyms, questions, run] = await Promise.all([
+  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests, mixRows, week, gyms, questions, run, picked] = await Promise.all([
     getProfile(db),
     activeInjuries(db),
     loadStats(db, today, 6),
@@ -383,6 +383,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     knownGyms(db),
     pendingQuestions(db, today),
     lastRun(db),
+    currentClimbingDays(db, today),
   ]);
   return {
     today,
@@ -405,7 +406,12 @@ export async function overview(db: D1Database, today: string, days: number) {
     recent_coach_notes: coachNotes,
     benchmarks,
     ...tests,
-    coach: { open_questions: questions.open, answered_questions: questions.answered, last_run: run },
+    coach: {
+      open_questions: questions.open,
+      answered_questions: questions.answered,
+      last_run: run,
+      climbing_days: climbingDaysContext(picked), // the climber's latest pick of climbing days, as dates (#56)
+    },
   };
 }
 

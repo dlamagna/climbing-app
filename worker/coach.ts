@@ -241,6 +241,46 @@ export async function currentClimbingDays(db: D1Database, today: string) {
     .first<{ answer: string; answered_at: string; topic: string; expires_on: string | null }>();
 }
 
+// The latest pick as dates, for the review (start_daily_review and get_overview's coach): which days the
+// climber will climb from `from` to `to`. Chips are matched against that window's dates; a typed answer
+// with no chip is kept as the note.
+export interface ClimbingDaysContext {
+  source: "weekly question" | "Plan my climbing days";
+  set_at: string;
+  from: string;
+  to: string;
+  days: string[];
+  no_climbing: boolean;
+  note: string | null;
+  answer: string;
+}
+
+export function climbingDaysContext(
+  row: { answer: string; answered_at: string; topic: string; expires_on: string | null } | null,
+): ClimbingDaysContext | null {
+  if (!row) return null;
+  const [prefix, from] = row.topic.split(":");
+  const to = row.expires_on ?? addDays(from, 6);
+  const window: string[] = [];
+  for (let d = from; d <= to; d = addDays(d, 1)) window.push(d);
+  const [head, ...rest] = row.answer.split(" - ");
+  const tokens = head.split(",").map((t) => t.trim());
+  const days = window.filter((d) => tokens.includes(dayChip(d)));
+  const no_climbing = tokens.includes(NOT_THIS_WEEK) || tokens.includes(NO_CLIMBING);
+  const chipped = days.length > 0 || no_climbing;
+  const note = chipped ? rest.join(" - ").trim() || null : row.answer;
+  return {
+    source: prefix === WEEK_TOPIC ? "weekly question" : "Plan my climbing days",
+    set_at: row.answered_at,
+    from,
+    to,
+    days,
+    no_climbing,
+    note,
+    answer: row.answer,
+  };
+}
+
 export async function ensureWeeklyQuestion(db: D1Database, today: string): Promise<void> {
   const q = weeklyQuestion(today);
   if (!q) return;
@@ -370,15 +410,27 @@ the climber anything in chat, work only through these tools.
    week: its answer lists day chips like "Tue 20" (dates of that week), maybe "${NOT_THIS_WEEK}", and maybe a
    note after " - ". Put that week's climbing sessions on those days only, and keep the other days for rest or
    light non-climbing work; "${NOT_THIS_WEEK}" means no climbing sessions that week. It is this week's
-   availability, not a lasting fact: don't save it to the profile. Don't ask it yourself; while it is open,
-   plan from profile weekly_availability. The climber can also pick days any time with the app's "Plan my
-   climbing days" button: an answered question with topic "${CLIMB_DAYS_TOPIC}:<date>" whose answer lists days
-   within the ${CLIMB_DAYS_AHEAD} days from that date ("${NO_CLIMBING}" = none). Treat it the same way; when
-   several such answers overlap, the latest answered_at wins.
+   availability, not a lasting fact: don't save it to the profile. Don't ask it yourself. The climber can also
+   pick days any time with the app's "Plan my climbing days" button (topic "${CLIMB_DAYS_TOPIC}:<date>", days
+   within the ${CLIMB_DAYS_AHEAD} days from that date, "${NO_CLIMBING}" = none). You don't need to decode these
+   answers: climbing_days (in this result and in get_overview's coach) is the latest pick that still applies,
+   already as dates, and stays there after you close the question.
 
 4. Plan: keep the next 7 days filled, starting tomorrow. Change only what the new data calls for; if the
    plan still fits, leave it. Rewrite with set_plan and keep_app_entries: true (entries the climber added or
    set a status on stay). Never change today or past days. Put planned tests in expected_benchmarks.
+   Fixed sessions are the days in climbing_days.days and plan entries the climber added by hand (source
+   'app') or set a status on. Plan around them:
+   - Picked days: put the climbing sessions on them; days between them get rest, mobility or light
+     non-finger work, never extra climbing. no_climbing: no climbing sessions from climbing_days.from to .to.
+   - After the last fixed session (one picked day, a single session in the calendar, or the end of the
+     picks), start planning from the day after it: fill the rest of the 7 days with what you suggest.
+     Keep the days before a lone fixed session light, so they arrive fresh.
+   - Nothing fixed (climbing_days is null or out of date): suggest the days yourself from the current load
+     (ratio_total / ratio_finger and baseline_status), readiness, recent hard days and recovery, the
+     profile's weekly_availability and goals.
+   - Title every session you chose the day for (not picked by the climber) "Suggested: <title>", and say in
+     the coach note that they can change the days with Plan my climbing days.
 
 5. Coach note: if something is worth saying (why the plan changed, tomorrow's focus, a load or injury
    warning), add one short note with add_coach_note dated tomorrow. Skip it when there's nothing new.
@@ -611,10 +663,11 @@ export async function startReview(db: D1Database, today: string) {
   const checked_at = nowStamp();
   await ensureWeeklyQuestion(db, today);
   const last = await lastRun(db);
-  const [changes, ahead, pending] = await Promise.all([
+  const [changes, ahead, pending, picked] = await Promise.all([
     changesSince(db, last, today),
     plannedDaysAhead(db, today),
     pendingQuestions(db, today),
+    currentClimbingDays(db, today),
   ]);
   const decision = reviewDecision(last, changes, ahead);
   return {
@@ -623,6 +676,7 @@ export async function startReview(db: D1Database, today: string) {
     last_run: last,
     ...decision,
     planned_days_ahead: ahead,
+    climbing_days: climbingDaysContext(picked),
     changes,
     open_questions: pending.open,
     instructions: REVIEW_INSTRUCTIONS,

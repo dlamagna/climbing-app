@@ -26,7 +26,7 @@ export const COACH_TOOLS: Tool[] = [
   {
     name: "start_daily_review",
     description:
-      "First call of the scheduled daily coach review (also fine to call by hand). Returns checked_at, the last run, review_needed with reasons, what was written since the last run (sessions logged or edited, new injuries, injury updates, profile keys changed, plan entries added by hand, answered and skipped questions, app feedback not handled yet, check-in and benchmark counts), planned_days_ahead, open questions, and the review instructions to follow.",
+      "First call of the scheduled daily coach review (also fine to call by hand). Returns checked_at, the last run, review_needed with reasons, what was written since the last run (sessions logged or edited, new injuries, injury updates, profile keys changed, plan entries added by hand, answered and skipped questions, app feedback not handled yet, check-in and benchmark counts), planned_days_ahead, climbing_days (the climber's latest pick of climbing days, as dates), open questions, and the review instructions to follow.",
     inputSchema: { type: "object", properties: {} },
     annotations: { readOnlyHint: true },
     run: async (_a, env) => startReview(env.DB, await todayFor(env)),
