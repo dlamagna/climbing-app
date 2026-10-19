@@ -78,7 +78,7 @@ and a milestone, and are added to the checklist in the roadmap issue named by `G
 A scheduled Claude run can review your data once a day without an API key. It runs as a Claude Code
 routine on your own Claude subscription, through the same connector. When nothing new was logged it stops
 straight away. Otherwise it:
-- adjusts the next 7 days of the plan around the days you picked to climb, or suggests days from your load
+- adjusts the coming days of the plan around the days you picked to climb, or suggests days from your load
   when you haven't picked any
 - may leave a coach note
 - may ask you questions, shown as one-tap cards on Today

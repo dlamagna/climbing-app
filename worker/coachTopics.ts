@@ -6,8 +6,8 @@ export const WEEK_TOPIC = "week_days";
 export const NOT_THIS_WEEK = "Not this week";
 
 // Topic prefix of climbing days picked with Today's "Plan my climbing days" button (#56): 'climb_days:<date>',
-// one per day it was set; it covers that date and the CLIMB_DAYS_AHEAD - 1 days after.
+// one per day it was set; it covers that date and the CLIMB_DAYS_AHEAD - 1 days after (today and the next 9).
 export const CLIMB_DAYS_TOPIC = "climb_days";
-export const CLIMB_DAYS_AHEAD = 7;
+export const CLIMB_DAYS_AHEAD = 10;
 // The chip for "none of these days" in the button's picker.
 export const NO_CLIMBING = "No climbing";

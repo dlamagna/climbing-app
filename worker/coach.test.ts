@@ -113,7 +113,7 @@ describe("weeklyQuestion", () => {
 });
 
 describe("parseClimbingDays", () => {
-  // TODAY = 2026-05-10 (a Sunday): the window is 10 to 16 May.
+  // TODAY = 2026-05-10 (a Sunday): the window is today and the next 9 days, 10 to 19 May.
   it("sorts and dedupes days in the 7-day window", () => {
     expect(parseClimbingDays({ days: ["2026-05-14", "2026-05-11", "2026-05-14"], note: " evenings " }, TODAY)).toEqual({
       days: ["2026-05-11", "2026-05-14"],
@@ -125,8 +125,8 @@ describe("parseClimbingDays", () => {
     [{}, /must be a list/],
     [{ days: "2026-05-11" }, /must be a list/],
     [{ days: ["11 May"] }, /YYYY-MM-DD/],
-    [{ days: ["2026-05-09"] }, /from 2026-05-10 to 2026-05-16/],
-    [{ days: ["2026-05-17"] }, /from 2026-05-10 to 2026-05-16/],
+    [{ days: ["2026-05-09"] }, /from 2026-05-10 to 2026-05-19/],
+    [{ days: ["2026-05-20"] }, /from 2026-05-10 to 2026-05-19/],
   ])("rejects %j", (b, msg) => {
     expect(() => parseClimbingDays(b, TODAY)).toThrow(msg);
   });
@@ -405,14 +405,15 @@ describe("questions", () => {
     expect(rows("SELECT COUNT(*) AS n FROM coach_questions WHERE topic LIKE 'climb_days:%'")).toEqual([{ n: 1 }]);
     const { answered } = await pendingQuestions(db, MON);
     expect(answered.map((q) => q.answer)).toEqual(["Wed 6 - outdoors"]);
-    expect(answered[0].options).toEqual(["Mon 4", "Tue 5", "Wed 6", "Thu 7", "Fri 8", "Sat 9", "Sun 10", NO_CLIMBING]);
+    expect(answered[0].options).toEqual(["Mon 4", "Tue 5", "Wed 6", "Thu 7", "Fri 8", "Sat 9", "Sun 10", "Mon 11", "Tue 12", "Wed 13", NO_CLIMBING]);
 
     // A later day's pick closes the earlier one; the latest is what Today shows.
     exec("UPDATE coach_questions SET answered_at = '2026-05-04T08:00:00Z' WHERE topic = 'climb_days:2026-05-04'");
     await setClimbingDays(db, { days: [] }, "2026-05-06");
     expect((await pendingQuestions(db, "2026-05-06")).answered.map((q) => q.topic)).toEqual(["climb_days:2026-05-06"]);
     expect((await currentClimbingDays(db, "2026-05-06"))!.answer).toBe(NO_CLIMBING);
-    expect(await currentClimbingDays(db, "2026-05-13")).toBeNull(); // past its window
+    expect((await currentClimbingDays(db, "2026-05-15"))!.answer).toBe(NO_CLIMBING); // 6 May + 9 days
+    expect(await currentClimbingDays(db, "2026-05-16")).toBeNull(); // past its window
   });
 
   it("an already answered weekly question stays for the coach when days are picked later", async () => {
@@ -428,7 +429,7 @@ describe("questions", () => {
     const [q] = (await pendingQuestions(db, TODAY)).answered;
     await closeQuestions(db, [q.id]);
     const r = await startReview(db, TODAY);
-    expect(r.climbing_days).toMatchObject({ source: "Plan my climbing days", days: ["2026-05-12", "2026-05-15"], from: TODAY, to: "2026-05-16" });
+    expect(r.climbing_days).toMatchObject({ source: "Plan my climbing days", days: ["2026-05-12", "2026-05-15"], from: TODAY, to: "2026-05-19" });
     expect(r.changes.answered_questions).toEqual([]);
   });
 
