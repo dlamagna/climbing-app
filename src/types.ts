@@ -23,6 +23,7 @@ export interface Session {
   max_grade: string | null;
   notes: string | null;
   tags?: string | null; // comma-separated style tags, see worker/tags.ts
+  outdoor?: number | null; // 1 = outdoors (climbing types only); missing in older cached responses = indoors
   updated_at?: string | null; // set once edited
   benchmarks?: SessionBenchmark[]; // results entered with it (GET /sessions/:id only)
 }
@@ -168,7 +169,8 @@ export interface Benchmark {
 export const SESSION_TYPES = [
   { value: "boulder", label: "Boulder" },
   { value: "board", label: "Board" },
-  { value: "lead", label: "Lead / top rope" },
+  { value: "lead", label: "Lead" },
+  { value: "toprope", label: "Top rope" },
   { value: "hangboard", label: "Hangboard" },
   { value: "strength", label: "Strength" },
   { value: "cardio", label: "Cardio" },

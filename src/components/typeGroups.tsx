@@ -2,10 +2,11 @@
 // letter, a swatch and the legend. Colour always comes with a letter or a label.
 import { type GroupKey, TYPE_GROUPS, groupInfo } from "../../worker/typeGroups";
 
-export function GroupMarker({ group, title }: { group: GroupKey; title?: string }) {
-  // #33: an outdoor session can add a ring here (e.g. an extra class) without changing the layout.
+// outdoor (#33) adds an outline ring: a shape cue, not a colour, explained in the legend.
+export function GroupMarker({ group, title, outdoor }: { group: GroupKey; title?: string; outdoor?: boolean }) {
+  const label = title ?? groupInfo(group).label;
   return (
-    <span className={`marker g-${group}`} title={title ?? groupInfo(group).label} aria-hidden="true">
+    <span className={`marker g-${group}${outdoor ? " outdoor" : ""}`} title={outdoor ? `${label}, outdoor` : label} aria-hidden="true">
       {groupInfo(group).letter}
     </span>
   );
@@ -21,6 +22,11 @@ export function GroupLegend({ markers = false }: { markers?: boolean }) {
           {markers ? <GroupMarker group={g.key} /> : <GroupSwatch group={g.key} />} {g.label}
         </span>
       ))}
+      {markers && (
+        <span>
+          <span className="marker outdoor outdoor-key" aria-hidden="true" /> Outdoor
+        </span>
+      )}
     </div>
   );
 }

@@ -11,7 +11,7 @@ import { WRITE_TOOLS } from "./mcp-writes";
 import { schemaOf } from "./partial";
 import { profileInjuryWarnings, rejectedProfileWarning, splitProfileUpdate } from "./profile-injury";
 import { annotateSchema } from "./schema-docs";
-import { SESSION_TYPES } from "./sessions";
+import { OUTDOOR_TYPES, SESSION_TYPES, outdoorColumn, outdoorError } from "./sessions";
 import { TYPE_GROUPS } from "./typeGroups";
 import {
   FINGER_WEIGHT_MAX,
@@ -34,6 +34,7 @@ const weightsText = (weights: Record<string, number>) =>
 const WEIGHTS_TEXT = weightsText(TAG_FINGER_WEIGHTS);
 const TYPE_WEIGHTS_TEXT = weightsText(TYPE_FINGER_WEIGHTS);
 const GROUPS_TEXT = TYPE_GROUPS.map((g) => `${g.key} = ${g.types.join("/")}`).join(", ");
+const CLIMBING_TEXT = OUTDOOR_TYPES.join("/");
 
 const SUPPORTED_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"];
 
@@ -93,7 +94,7 @@ instead of logging it again (session ids are in get_overview). Never invent valu
 
 Plan vs actual: every plan entry has a status, derived when read from the sessions logged (so a session
 logged a day or two late still turns "skipped" into "done"). Sessions match the entries on their date: same
-type first, then a similar one (boulder/board/lead; strength/hangboard), else any free entry that day. Same
+type first, then a similar one (boulder/board/lead/toprope; strength/hangboard), else any free entry that day. Same
 type (or an entry with no type) = done, or partial if under 60% of the entry's duration_min; a different type
 = swapped; a session on a rest day makes the rest day swapped; nothing logged once the day is over = skipped;
 today and later = planned. auto_status is the derived one; the climber can override it in the app. A
@@ -114,6 +115,12 @@ tag naming the session's own type (board on a board session) adds nothing. E.g. 
 last7.finger, prev28_weekly_avg.finger, weeks[].finger and ratio_finger use the weighted value; the *.finger_raw
 fields are the plain unweighted sums. finger_load_day_before on injury updates is unweighted. Use the tags to check
 style rules such as "avoid small crimps", and pass tags to log_session / update_session when the climber describes the style.
+
+Indoor/outdoor: ${CLIMBING_TEXT} sessions carry sessions.outdoor (1 = outdoors at a crag or boulders, 0 = indoors,
+the default; other types are always 0). lead and toprope are separate types (older rope sessions are all lead,
+whatever they were). Outdoor days usually mean longer sessions with more rest, so a long outdoor session at a
+moderate effort is normal; mix.*.outdoor_minutes in get_overview shows how much of each group's time was
+outdoors. Pass outdoor: true to log_session / update_session when the climber says they climbed outside.
 
 Use set_plan to write or rewrite the plan (one or more entries per date; existing entries on those dates are
 replaced, which also drops their status overrides and the sessions pinned to them; statuses are then derived
@@ -139,8 +146,8 @@ the scales: "slept like rubbish" = sleep_quality 1, "fine" = 2, "great" = 3; "kn
 they say so). Save with partial writes: upsert_checkin with only the fields heard; add_injury_update per
 injury mentioned (injury_id from the tool's text; trend, stiffness, red_flags when said); log_session with
 the date, plan_id of the planned entry they confirm (the tool lists the entries for that date; if they name
-another date, call get_log_checklist again with it to get that day's plan_id and planned tests) and tags when
-they describe the style; log_benchmark for each test result, with the session date and the planned name and
+another date, call get_log_checklist again with it to get that day's plan_id and planned tests), tags when
+they describe the style and outdoor: true when they climbed outside (indoors when not said); log_benchmark for each test result, with the session date and the planned name and
 unit. A new tweak or injury: report_injury with started_on = the session date and session_id = the logged
 session's id.
 
@@ -165,7 +172,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_overview",
     description:
-      `Everything needed to recommend today's training: warnings (data problems to sort out first, if any), readiness (green/amber/red with reasons, from check-in, hard days, load vs baseline and plan, injury trend; the same call the app shows), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok; finger load weighted by session type and style tags, finger_raw unweighted), mix (minutes, load and session count per type group for the last 7 and last 28 days, so you can spot e.g. one rope session in three weeks; groups: ${GROUPS_TEXT}), recent check-ins (sleep, feeling, alcohol, protein), sessions (with optional style tags), hangboard logs, plan for the past N days and next 7 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, and missing_benchmarks_last_7_days (planned tests with no result yet).`,
+      `Everything needed to recommend today's training: warnings (data problems to sort out first, if any), readiness (green/amber/red with reasons, from check-in, hard days, load vs baseline and plan, injury trend; the same call the app shows), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok; finger load weighted by session type and style tags, finger_raw unweighted), mix (minutes, load, session count and outdoor_minutes per type group for the last 7 and last 28 days, so you can spot e.g. one rope session in three weeks; groups: ${GROUPS_TEXT}), recent check-ins (sleep, feeling, alcohol, protein), sessions (with optional style tags and outdoor 0/1), hangboard logs, plan for the past N days and next 7 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, and missing_benchmarks_last_7_days (planned tests with no result yet).`,
     inputSchema: {
       type: "object",
       properties: {
@@ -276,7 +283,7 @@ const TOOLS: Tool[] = [
   {
     name: "log_session",
     description:
-      "Log a completed training session. Load is computed as duration_min * rpe. To fix one that is already logged use update_session.",
+      "Log a completed training session. Load is computed as duration_min * rpe. Climbing sessions can be marked outdoor (default indoors). To fix one that is already logged use update_session.",
     inputSchema: {
       type: "object",
       properties: {
@@ -295,13 +302,19 @@ const TOOLS: Tool[] = [
           items: { type: "string", enum: SESSION_TAGS },
           description: `Optional style tags, only for ${TAG_TYPES.join(", ")}. Weight finger load (see instructions).`,
         },
+        outdoor: {
+          type: "boolean",
+          default: false,
+          description: `Climbed outdoors (crag, boulders); only for ${OUTDOOR_TYPES.join(", ")}. Default false = indoors.`,
+        },
       },
       required: ["type", "duration_min", "rpe"],
     },
     run: async (a, env) => {
-      const error = tagsError(a.tags, a.type);
+      const error = tagsError(a.tags, a.type) ?? outdoorError(a.outdoor, a.type);
       if (error) throw new Error(error);
-      return { id: await insertSession(env.DB, { ...a, tags: tagsColumn(a.tags), date: await today(env, a.date) }) };
+      const s = { ...a, tags: tagsColumn(a.tags), outdoor: outdoorColumn(a.outdoor), date: await today(env, a.date) };
+      return { id: await insertSession(env.DB, s) };
     },
   },
   {

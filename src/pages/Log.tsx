@@ -11,6 +11,7 @@ import { type NoteSuggestions as Suggestions, noteSuggestions } from "../painWor
 import { type Injury, type Readiness, SESSION_TYPES, type Session, type TodayView } from "../types";
 import { isHardSession } from "../../worker/readiness";
 import { type SessionTag, parseTags } from "../../worker/tags";
+import { isClimbingType } from "../../worker/typeGroups";
 
 export const EFFORT_HINT: Record<number, string> = {
   1: "barely anything",
@@ -58,6 +59,7 @@ function SessionForm({ session }: { session: Session | null }) {
   const [grade, setGrade] = useState(session?.max_grade ?? "");
   const [notes, setNotes] = useState(session?.notes ?? "");
   const [tags, setTags] = useState<SessionTag[]>(parseTags(session?.tags));
+  const [outdoor, setOutdoor] = useState(Boolean(session?.outdoor)); // indoors unless picked (#33)
   const [injury, setInjury] = useState<InjuryDraft | null>(null);
   const [linked, setLinked] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -91,6 +93,7 @@ function SessionForm({ session }: { session: Session | null }) {
         max_grade: grade.trim() || null,
         notes: notes.trim() || null,
         tags: takesTags(type) ? tags : [], // kept while switching types, only sent for climbing ones
+        outdoor: isClimbingType(type) && outdoor, // same: non-climbing types are always indoors
         new_injury: injury && { ...draftBody(injury), link: linked },
         benchmarks: benchmarkBody(tests.inputs),
       };
@@ -129,6 +132,18 @@ function SessionForm({ session }: { session: Session | null }) {
         <Field label="What">
           <Chips wrap options={SESSION_TYPES} value={type} onChange={setType} />
         </Field>
+        {isClimbingType(type) && (
+          <Field label="Where">
+            <Chips
+              options={[
+                { value: "indoor", label: "Indoor" },
+                { value: "outdoor", label: "Outdoor" },
+              ]}
+              value={outdoor ? "outdoor" : "indoor"}
+              onChange={(v) => v && setOutdoor(v === "outdoor")}
+            />
+          </Field>
+        )}
         {takesTags(type) && <TagPicker value={tags} onChange={setTags} />}
         <Field label="How long">
           <div className="row">

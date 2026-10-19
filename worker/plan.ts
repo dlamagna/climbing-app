@@ -34,7 +34,7 @@ export const KEY_MISSED_LOOKBACK_DAYS = 6; // a strength / test day that didn't 
 // for matching: the status is "done" for the exact type and "swapped" for anything else (board instead of
 // boulder included); the climber can override it with one tap.
 export const TYPE_GROUPS: string[][] = [
-  ["boulder", "board", "lead"],
+  ["boulder", "board", "lead", "toprope"],
   ["strength", "hangboard"],
 ];
 

@@ -101,7 +101,7 @@ Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:loc
 | `src/timer.ts` | Hangboard phase sequencing, beeps, screen wake lock |
 
 Training load = minutes × effort (1-10), compared with your average week over the previous four.
-Finger load (boulder, board, lead, hangboard) is tracked separately.
+Finger load (boulder, board, lead, top rope, hangboard) is tracked separately.
 
 Offline: the app shell and the timer work without signal; writes made offline are queued and sync later.
 
