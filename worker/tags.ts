@@ -19,7 +19,7 @@ export const SESSION_TAGS = [
 export type SessionTag = (typeof SESSION_TAGS)[number];
 
 // Session types that can carry tags (the climbing ones; hangboard has its own grip/edge detail).
-export const TAG_TYPES = ["boulder", "board", "lead"];
+export const TAG_TYPES = ["boulder", "board", "lead", "toprope"];
 
 // --- Finger-load weights: the ONLY place these numbers live. ---
 //
@@ -39,7 +39,7 @@ export const TYPE_FINGER_WEIGHTS: Record<string, number> = {
   boulder: 1,
   hangboard: 1,
   lead: 0.7,
-  // toprope: 0.6, once that type exists (#33)
+  toprope: 0.6, // less than lead: no clipping, more rests on the rope (#33)
 };
 
 export const FINGER_WEIGHT_MIN = 0.5;

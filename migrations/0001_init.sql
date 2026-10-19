@@ -18,7 +18,7 @@ CREATE TABLE checkins (
 CREATE TABLE sessions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   date TEXT NOT NULL,
-  type TEXT NOT NULL,             -- boulder | board | lead | hangboard | strength | cardio | mobility | other
+  type TEXT NOT NULL,             -- boulder | board | lead | toprope | hangboard | strength | cardio | mobility | other
   duration_min INTEGER NOT NULL,
   rpe INTEGER NOT NULL,           -- effort 1..10; training load = duration_min * rpe
   max_grade TEXT,                 -- hardest send, free text (e.g. '6C', 'V5', '7a')

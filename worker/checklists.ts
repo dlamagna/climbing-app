@@ -8,7 +8,7 @@
 // Lines starting with "Optional:" are optional; REQUIRED below says which items Claude asks about when the
 // voice note misses them.
 
-import { SESSION_TYPES } from "./sessions";
+import { OUTDOOR_TYPES, SESSION_TYPES } from "./sessions";
 
 export const CHECKLIST_KINDS = ["morning", "training"] as const;
 export type ChecklistKind = (typeof CHECKLIST_KINDS)[number];
@@ -88,6 +88,7 @@ export function trainingChecklist({ date, today, injuries, plan, tags }: Trainin
     "- Hardest send",
     `- What you worked on, how your fingers${injuryNames.length ? ` and ${injuryNames.join(", ")}` : ""} felt`,
     `- Optional: style tags (${tags.join(", ")})`,
+    `- Optional: indoor or outdoor? (${OUTDOOR_TYPES.join(", ")} only; indoor if not said)`,
     sessions.length
       ? `- Was this the planned session? Planned for ${day}: ${sessions.map(entryLabel).join(" or ")}`
       : plan.length

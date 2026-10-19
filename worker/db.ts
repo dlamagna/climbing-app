@@ -13,7 +13,7 @@ import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, mondayOf, type Loa
 import { allColumns } from "./partial";
 import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, weekSummary } from "./plan";
 import { type ReadinessCheckin, type ReadinessInjury, readiness } from "./readiness";
-import { SESSION_COLUMNS, updateSessionFields } from "./sessions";
+import { SESSION_COLUMNS, outdoorColumn, updateSessionFields } from "./sessions";
 import { type MixSession, mixWindows } from "./typeGroups";
 
 export { FINGER_TYPES, addDays, mondayOf, type WeekLoad } from "./load";
@@ -97,16 +97,20 @@ export interface Session {
   notes?: string | null;
   plan_id?: number | null; // pinned link to a plan entry (see worker/plan.ts); NULL = auto-matched
   tags?: string | null; // column value: comma-separated, see worker/tags.ts
+  outdoor?: number | boolean | null; // 1/true = outdoors; missing = indoors (climbing types only, see worker/sessions.ts)
 }
 
 // clientId makes the insert idempotent: replaying the same write returns the original row's id.
 export async function insertSession(db: D1Database, s: Session, clientId: string | null = null): Promise<number> {
   const row = await db
     .prepare(
-      `INSERT INTO sessions (date, type, duration_min, rpe, max_grade, notes, plan_id, tags, client_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
+      `INSERT INTO sessions (date, type, duration_min, rpe, max_grade, notes, plan_id, tags, outdoor, client_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
     )
-    .bind(s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null, s.plan_id ?? null, s.tags ?? null, clientId)
+    .bind(
+      s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null, s.plan_id ?? null, s.tags ?? null,
+      outdoorColumn(s.outdoor), clientId,
+    )
     .first<{ id: number }>();
   return row?.id ?? (await idForClientId(db, "sessions", clientId!));
 }
@@ -118,9 +122,11 @@ export async function idForClientId(db: D1Database, table: "sessions" | "hang_lo
 
 // The app's edit form sends every field; see worker/sessions.ts for the column whitelist. plan_id is the
 // exception: only changed when passed (the edit form doesn't send it), so an edit keeps a pinned plan link.
+// outdoor is NOT NULL: missing means indoors, like a missing optional field is cleared.
 export async function updateSession(db: D1Database, id: number, s: Session): Promise<boolean> {
   const values = allColumns(SESSION_COLUMNS.filter((c) => c !== "plan_id"), s as unknown as Record<string, unknown>);
   if (s.plan_id !== undefined) values.plan_id = s.plan_id;
+  values.outdoor = outdoorColumn(s.outdoor);
   return (await updateSessionFields(db, id, values)) !== null;
 }
 
@@ -316,7 +322,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     all(db, "SELECT date, name, value, unit, notes FROM benchmarks ORDER BY date DESC LIMIT 30"),
     all(db, "SELECT body_part, side, started_on, resolved_on FROM injuries WHERE resolved_on IS NOT NULL ORDER BY resolved_on DESC LIMIT 5"),
     benchmarkOverview(db, today),
-    all<MixSession>(db, "SELECT date, type, duration_min, rpe FROM sessions WHERE date BETWEEN ? AND ?", addDays(today, -27), today),
+    all<MixSession>(db, "SELECT date, type, duration_min, rpe, outdoor FROM sessions WHERE date BETWEEN ? AND ?", addDays(today, -27), today),
   ]);
   return {
     today,

@@ -5,8 +5,7 @@
 import { addDays } from "./load";
 
 export const TYPE_GROUPS = [
-  // "toprope" joins lead here once #33 adds that type.
-  { key: "rope", label: "Rope", letter: "R", types: ["lead"] },
+  { key: "rope", label: "Rope", letter: "R", types: ["lead", "toprope"] },
   { key: "boulder", label: "Boulder", letter: "B", types: ["boulder", "board"] },
   { key: "fingers", label: "Fingers", letter: "F", types: ["hangboard"] },
   { key: "other", label: "Other", letter: "O", types: ["strength", "cardio", "mobility", "other"] },
@@ -20,6 +19,15 @@ export const GROUP_KEYS: GroupKey[] = TYPE_GROUPS.map((g) => g.key);
 export const CLIMBING_GROUPS = ["rope", "boulder"] as const satisfies readonly GroupKey[];
 export type ClimbingGroup = (typeof CLIMBING_GROUPS)[number];
 
+// The climbing session types (rope + boulder groups): the only ones that can be logged as outdoor (#33).
+// tags.ts keeps its own TAG_TYPES list (it can't import this file without an import cycle via load.ts);
+// typeGroups.test.ts checks the two lists stay the same.
+export const CLIMBING_TYPES: readonly string[] = TYPE_GROUPS.filter((g) =>
+  (CLIMBING_GROUPS as readonly string[]).includes(g.key),
+).flatMap((g) => g.types);
+
+export const isClimbingType = (type: string | null | undefined) => CLIMBING_TYPES.includes(type ?? "");
+
 // Unknown types (an old or future value) fall into "other" rather than disappearing from totals.
 export function groupOf(type: string | null | undefined): GroupKey {
   return TYPE_GROUPS.find((g) => (g.types as readonly string[]).includes(type ?? ""))?.key ?? "other";
@@ -32,21 +40,23 @@ export interface MixSession {
   type: string;
   duration_min: number;
   rpe: number;
+  outdoor?: number | boolean | null; // sessions.outdoor (1 = outdoors); missing = indoor
 }
 
 export interface GroupTotals {
   minutes: number;
   load: number; // duration_min * rpe
   sessions: number;
+  outdoor_minutes: number; // the part of `minutes` climbed outdoors (#33)
 }
 
 export type Mix = Record<GroupKey, GroupTotals>;
 
 export function emptyMix(): Mix {
-  return Object.fromEntries(GROUP_KEYS.map((k) => [k, { minutes: 0, load: 0, sessions: 0 }])) as Mix;
+  return Object.fromEntries(GROUP_KEYS.map((k) => [k, { minutes: 0, load: 0, sessions: 0, outdoor_minutes: 0 }])) as Mix;
 }
 
-// Minutes, load and session count per group.
+// Minutes, load, session count and outdoor minutes per group.
 export function groupMix(sessions: readonly MixSession[]): Mix {
   const mix = emptyMix();
   for (const s of sessions) {
@@ -54,6 +64,7 @@ export function groupMix(sessions: readonly MixSession[]): Mix {
     g.minutes += s.duration_min || 0;
     g.load += (s.duration_min || 0) * (s.rpe || 0);
     g.sessions += 1;
+    if (s.outdoor) g.outdoor_minutes += s.duration_min || 0;
   }
   return mix;
 }
@@ -67,6 +78,17 @@ export function climbingShares(mix: Mix): Record<ClimbingGroup, number | null> {
   if (total <= 0) return { rope: null, boulder: null };
   const rope = Math.round((mix.rope.minutes / total) * 100);
   return { rope, boulder: 100 - rope };
+}
+
+// The mix summary line, e.g. "Rope 6h 10m (35%, 2h outdoor) · Boulder 11h 30m (65%)"; the outdoor part
+// only when some of the group's time was outdoors (#33). null when there was no climbing time.
+export function climbingSummary(mix: Mix): string | null {
+  const shares = climbingShares(mix);
+  if (shares.rope === null) return null;
+  return CLIMBING_GROUPS.map((k) => {
+    const outdoor = mix[k].outdoor_minutes > 0 ? `, ${formatMinutes(mix[k].outdoor_minutes)} outdoor` : "";
+    return `${groupInfo(k).label} ${formatMinutes(mix[k].minutes)} (${shares[k]}%${outdoor})`;
+  }).join(" · ");
 }
 
 // Sessions dated from..to inclusive (YYYY-MM-DD strings compare in date order).
