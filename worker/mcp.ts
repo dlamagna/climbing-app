@@ -2,7 +2,7 @@
 // Claude Code and claude.ai custom connectors both speak this, so no SDK is needed.
 
 import { CHECKIN_FIELDS, checkinPatch, upsertCheckinPartial } from "./checkins";
-import { type Env, type PlanEntry, addCoachNote, getProfile, insertSession, overview, setPlan, updateProfile } from "./db";
+import { type Env, type PlanEntry, addCoachNote, getProfile, insertSession, overview, resolveGym, setPlan, updateProfile } from "./db";
 import { isIsoDate } from "./injury-dates";
 import { ISSUE_LABELS, createIssue, githubEnabled, listIssues } from "./github";
 import { type Tool, dateSchema, today } from "./mcp-common";
@@ -11,6 +11,7 @@ import { WRITE_TOOLS } from "./mcp-writes";
 import { schemaOf } from "./partial";
 import { profileInjuryWarnings, rejectedProfileWarning, splitProfileUpdate } from "./profile-injury";
 import { annotateSchema } from "./schema-docs";
+import { GYM_MESSAGE, isGymInput } from "./gyms";
 import { OUTDOOR_TYPES, SESSION_TYPES, outdoorColumn, outdoorError } from "./sessions";
 import { TYPE_GROUPS } from "./typeGroups";
 import {
@@ -122,6 +123,10 @@ whatever they were). Outdoor days usually mean longer sessions with more rest, s
 moderate effort is normal; mix.*.outdoor_minutes in get_overview shows how much of each group's time was
 outdoors. Pass outdoor: true to log_session / update_session when the climber says they climbed outside.
 
+Gyms: sessions.gym names where a session was done (free text). get_overview's gyms lists the names used so far;
+when the climber mentions a gym, pass that exact name as gym to log_session / update_session (the server also
+maps different case or spacing onto the stored spelling). Leave it out when not said.
+
 Use set_plan to write or rewrite the plan (one or more entries per date; existing entries on those dates are
 replaced, which also drops their status overrides and the sessions pinned to them; statuses are then derived
 again against the new entries, so already-logged days keep showing what happened).
@@ -172,7 +177,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_overview",
     description:
-      `Everything needed to recommend today's training: warnings (data problems to sort out first, if any), readiness (green/amber/red with reasons, from check-in, hard days, load vs baseline and plan, injury trend; the same call the app shows), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok; finger load weighted by session type and style tags, finger_raw unweighted), mix (minutes, load, session count and outdoor_minutes per type group for the last 7 and last 28 days, so you can spot e.g. one rope session in three weeks; groups: ${GROUPS_TEXT}), recent check-ins (sleep, feeling, alcohol, protein), sessions (with optional style tags and outdoor 0/1), hangboard logs, plan for the past N days and next 7 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, week_summary (this week Monday to today, the same numbers as the app's weekly card: average sleep hours and quality, total drinks from check-ins dated this week, sessions logged and planned vs done, weighted finger load this week vs the usual weekly average with its baseline_status, rope vs boulder minutes and share), plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, and missing_benchmarks_last_7_days (planned tests with no result yet).`,
+      `Everything needed to recommend today's training: warnings (data problems to sort out first, if any), readiness (green/amber/red with reasons, from check-in, hard days, load vs baseline and plan, injury trend; the same call the app shows), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok; finger load weighted by session type and style tags, finger_raw unweighted), mix (minutes, load, session count and outdoor_minutes per type group for the last 7 and last 28 days, so you can spot e.g. one rope session in three weeks; groups: ${GROUPS_TEXT}), recent check-ins (sleep, feeling, alcohol, protein), sessions (with optional style tags, outdoor 0/1 and gym), gyms (names used so far with session count and last use; reuse these exact names), hangboard logs, plan for the past N days and next 7 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, week_summary (this week Monday to today, the same numbers as the app's weekly card: average sleep hours and quality, total drinks from check-ins dated this week, sessions logged and planned vs done, weighted finger load this week vs the usual weekly average with its baseline_status, rope vs boulder minutes and share), plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, and missing_benchmarks_last_7_days (planned tests with no result yet).`,
     inputSchema: {
       type: "object",
       properties: {
@@ -307,13 +312,24 @@ const TOOLS: Tool[] = [
           default: false,
           description: `Climbed outdoors (crag, boulders); only for ${OUTDOOR_TYPES.join(", ")}. Default false = indoors.`,
         },
+        gym: {
+          type: "string",
+          description: "Gym the session was at, when the climber says. Reuse the exact name from get_overview's gyms; a new name is fine for a new gym.",
+        },
       },
       required: ["type", "duration_min", "rpe"],
     },
     run: async (a, env) => {
       const error = tagsError(a.tags, a.type) ?? outdoorError(a.outdoor, a.type);
       if (error) throw new Error(error);
-      const s = { ...a, tags: tagsColumn(a.tags), outdoor: outdoorColumn(a.outdoor), date: await today(env, a.date) };
+      if (a.gym !== undefined && !isGymInput(a.gym)) throw new Error(GYM_MESSAGE);
+      const s = {
+        ...a,
+        tags: tagsColumn(a.tags),
+        outdoor: outdoorColumn(a.outdoor),
+        gym: await resolveGym(env.DB, a.gym),
+        date: await today(env, a.date),
+      };
       return { id: await insertSession(env.DB, s) };
     },
   },

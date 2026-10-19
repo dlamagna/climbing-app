@@ -16,6 +16,7 @@ import {
 } from "./injuries";
 import { type Tool, dateSchema, todayFor } from "./mcp-common";
 import { NotFound } from "./errors";
+import { resolveGym } from "./db";
 import { schemaOf } from "./partial";
 import { SESSION_FIELDS, checkedSessionPatch, deleteSession, sessionId, updateSessionFields } from "./sessions";
 import { TAG_TYPES } from "./tags";
@@ -115,7 +116,9 @@ export const WRITE_TOOLS: Tool[] = [
     annotations: { destructiveHint: true, idempotentHint: true },
     run: async (a, env) => {
       const id = sessionId(a.id);
-      const row = await updateSessionFields(env.DB, id, await checkedSessionPatch(env.DB, id, a));
+      const patch = await checkedSessionPatch(env.DB, id, a);
+      if (typeof patch.gym === "string") patch.gym = await resolveGym(env.DB, patch.gym); // known spelling (#48)
+      const row = await updateSessionFields(env.DB, id, patch);
       if (!row) throw new NotFound(`Session ${id} not found`);
       return row;
     },

@@ -89,6 +89,7 @@ export function trainingChecklist({ date, today, injuries, plan, tags }: Trainin
     `- What you worked on, how your fingers${injuryNames.length ? ` and ${injuryNames.join(", ")}` : ""} felt`,
     `- Optional: style tags (${tags.join(", ")})`,
     `- Optional: indoor or outdoor? (${OUTDOOR_TYPES.join(", ")} only; indoor if not said)`,
+    "- Optional: which gym?",
     sessions.length
       ? `- Was this the planned session? Planned for ${day}: ${sessions.map(entryLabel).join(" or ")}`
       : plan.length

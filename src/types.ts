@@ -25,6 +25,7 @@ export interface Session {
   notes: string | null;
   tags?: string | null; // comma-separated style tags, see worker/tags.ts
   outdoor?: number | null; // 1 = outdoors (climbing types only); missing in older cached responses = indoors
+  gym?: string | null; // where it was done (#48)
   updated_at?: string | null; // set once edited
   benchmarks?: SessionBenchmark[]; // results entered with it (GET /sessions/:id only)
 }

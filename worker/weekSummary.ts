@@ -5,6 +5,7 @@
 
 import { type BaselineStatus, type WeekLoad, addDays, daysBetween, mondayOf } from "./load";
 import { type PlanRow, type PlanStatus, isRestEntry, weekSummary as planWeekSoFar } from "./plan";
+import { gymCounts, gymsText } from "./gyms";
 import { type MixSession, climbingShares, formatMinutes, groupMix, inRange } from "./typeGroups";
 
 // Check-in fields the summary reads. A check-in dated D describes the night before D (sleep) and the day
@@ -83,6 +84,7 @@ export function computeWeekSummary({ today, checkins, sessions, plan, load }: We
       rope_share: shares.rope, // % of climbing time; null with no climbing
       boulder_share: shares.boulder,
     },
+    gyms: gymCounts(weekSessions), // sessions per gym this week (#48), most first
   };
 }
 
@@ -129,6 +131,9 @@ export function mixText(m: WeekSummaryView["mix"]): string | null {
   if (m.rope_share === null || m.boulder_share === null) return null;
   return `Rope ${formatMinutes(m.rope_min)} (${m.rope_share}%) · Boulder ${formatMinutes(m.boulder_min)} (${m.boulder_share}%)`;
 }
+
+// "Gym A ×3 · Gym B", or null when no session this week has a gym.
+export const gymsRowText = (g: WeekSummaryView["gyms"]) => gymsText(g);
 
 // True when the week has nothing in it yet (e.g. Monday morning before the check-in).
 export const isEmptyWeek = (w: WeekSummaryView) =>

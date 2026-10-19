@@ -79,7 +79,7 @@ export default function History() {
             {sessions.map((s) => (
               <div key={s.id} className="entry">
                 <a className="entry-link" href={`#/log?edit=${s.id}`} aria-label={`Edit ${typeLabel(s.type)} session`}>
-                  <strong>{typeLabel(s.type)}</strong> {s.duration_min} min{s.outdoor ? " · outdoor" : ""} · effort {s.rpe}
+                  <strong>{typeLabel(s.type)}</strong> {s.duration_min} min{s.outdoor ? " · outdoor" : ""}{s.gym ? ` · ${s.gym}` : ""} · effort {s.rpe}
                   {s.max_grade && ` · ${s.max_grade}`}
                   <TagList tags={s.tags} />
                   <span className="muted"> · load {s.duration_min * s.rpe}</span>

@@ -63,6 +63,7 @@ export interface SessionRow {
   duration_min: number;
   rpe: number;
   plan_id?: number | null;
+  gym?: string | null; // #48, read by the weekly summary
 }
 
 export const isRestEntry = (e: Pick<PlanRow, "type" | "intensity">) =>
