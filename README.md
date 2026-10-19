@@ -75,33 +75,19 @@ and a milestone, and are added to the checklist in the roadmap issue named by `G
 
 ### Optional: daily coach review
 
-A scheduled Claude run can review your data once a day, without an API key: it runs as a Claude Code
-routine on your own Claude subscription and reaches the data through the same connector.
+A scheduled Claude run can review your data once a day without an API key. It runs as a Claude Code
+routine on your own Claude subscription, through the same connector. When nothing new was logged it stops
+straight away. Otherwise it:
+- adjusts the next 7 days of the plan around the days you picked to climb, or suggests days from your load
+  when you haven't picked any
+- may leave a coach note
+- may ask you questions, shown as one-tap cards on Today
+- sorts feedback you sent from the app into GitHub issues
 
-Each run calls `start_daily_review`. If nothing new was logged since the last run, it records that and
-stops. Otherwise it:
-- adjusts the next 7 days of the plan. It leaves today, past days, and entries you added or marked by hand
-  alone.
-- may leave a short coach note.
-- may ask you up to a couple of questions. They appear on the Today screen as one-tap cards, and the next
-  run reads your answers.
-- triages anything you sent under More → App feedback: a duplicate, declined, or filed as a GitHub issue
-  with a priority (needs the GitHub token above). Issues are written in general terms, without copying
-  your feedback.
+You choose your climbing days with the weekly pop-up, which you can turn off in Settings, or with **Plan
+my climbing days** on Today.
 
-Every run is logged, and the Today screen shows what the last review changed.
-
-At the start of each week (first app open, Monday to Wednesday) the app also asks which days you plan to climb,
-as a pop-up with a chip per day and an optional note. You can also pick your days any time with **Plan my
-climbing days** on Today. Either way, that night's review plans your climbing on those days. Pop-ups can be
-switched off under More → Profile & settings, and the question then only shows as a card on Today.
-
-To set it up, in Claude Code run `/schedule` (or create a routine on claude.ai/code). Pick a daily time
-after you usually train, for example 22:00, attach the climbing-app connector, and use this prompt:
-
-> Run the daily coach review for the climbing app: call start_daily_review and follow its instructions exactly.
-
-The same text is the connector's `daily_review` prompt, so you can also run a review by hand.
+**Setup, the routine prompt, testing and troubleshooting: [docs/daily-coach-review.md](docs/daily-coach-review.md).**
 
 ## Your data stays private
 
@@ -156,7 +142,7 @@ Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:loc
 | `worker/index.ts` | REST API for the app (bearer `APP_TOKEN`) and MCP routing (`MCP_TOKEN`) |
 | `worker/mcp.ts` | MCP server: tools, plus instructions telling Claude how to coach from the data |
 | `worker/mcp-writes.ts` | MCP tools that report/update/resolve injuries and edit/delete sessions |
-| `worker/coach.ts`, `mcp-coach.ts` | Daily coach review: what changed since the last run, questions, run log, app feedback |
+| `worker/coach.ts`, `mcp-coach.ts` | Daily coach review: what changed since the last run, questions, climbing days, run log, app feedback ([docs](docs/daily-coach-review.md)) |
 | `worker/injuries.ts`, `sessions.ts`, `checkins.ts` | Validation and writes shared by the REST API and MCP (partial updates via `worker/partial.ts`) |
 | `worker/db.ts` | Queries shared by both, including training-load maths |
 | `worker/export.ts` | `GET /api/export` helpers: table list, CSV, filename |
