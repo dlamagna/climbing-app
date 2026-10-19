@@ -4,9 +4,10 @@
 import { CHECKIN_FIELDS, checkinPatch, upsertCheckinPartial } from "./checkins";
 import { type Env, type PlanEntry, addCoachNote, getProfile, insertSession, overview, resolveGym, setPlan, updateProfile } from "./db";
 import { isIsoDate } from "./injury-dates";
-import { ISSUE_LABELS, createIssue, githubEnabled, listIssues } from "./github";
+import { ISSUE_LABELS, PRIORITIES, PRIORITY_TEXT, createIssue, githubEnabled, listIssues, listMilestones } from "./github";
 import { type Tool, dateSchema, today } from "./mcp-common";
 import { CHECKLIST_TOOL, InvalidParams, d1ChecklistLoader, handlePromptRequest } from "./mcp-prompts";
+import { COACH_TOOLS } from "./mcp-coach";
 import { WRITE_TOOLS } from "./mcp-writes";
 import { schemaOf } from "./partial";
 import { profileInjuryWarnings, rejectedProfileWarning, splitProfileUpdate } from "./profile-injury";
@@ -130,7 +131,15 @@ maps different case or spacing onto the stored spelling). Leave it out when not 
 
 Use set_plan to write or rewrite the plan (one or more entries per date; existing entries on those dates are
 replaced, which also drops their status overrides and the sessions pinned to them; statuses are then derived
-again against the new entries, so already-logged days keep showing what happened).
+again against the new entries, so already-logged days keep showing what happened). Plan entries carry source:
+'coach' (written by set_plan) or 'app' (added by hand). With keep_app_entries: true, set_plan replaces only
+coach entries without a status picked by hand.
+
+Daily coach review: a scheduled run (the daily_review prompt) calls start_daily_review and follows its
+instructions. Questions for the climber go through ask_question (shown on the app's Today screen, answered with
+a tap); get_overview's coach.answered_questions are answers not used yet: use them (lasting facts to the
+profile), then close_questions. coach.last_run is the last review. In a normal chat you may use the same
+questions, but ask the climber directly when they are there.
 
 When a planned day includes tests (max pull-ups, max hang, plank, hardest flash, a timed run...), put them
 in that entry's expected_benchmarks as {name, unit}, not only in details: the app then shows an input per
@@ -162,7 +171,9 @@ comments, with units and scales, come from the server code, since the database i
 
 If report_issue is available, it files issues on the app's own GitHub repo: feature ideas and bugs about
 this app, never training notes or personal data (the repo is public). Call list_issues first to avoid
-duplicates, and write the issue so a developer can act on it.`;
+duplicates, and write the issue so a developer can act on it. Give it a priority (${PRIORITY_TEXT}) and a
+milestone when one fits; it is added to the roadmap issue. App feedback the climber typed in the app arrives
+in start_daily_review's changes.new_feedback; record what you did with each one with resolve_feedback.`;
 
 function readOnlySql(sql: string): string {
   const s = sql.trim().replace(/;\s*$/, "");
@@ -178,7 +189,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_overview",
     description:
-      `Everything needed to recommend today's training: warnings (data problems to sort out first, if any), readiness (green/amber/red with reasons, from check-in, hard days, load vs baseline and plan, injury trend; the same call the app shows), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok; finger load weighted by session type and style tags, finger_raw unweighted), mix (minutes, load, session count and outdoor_minutes per type group for the last 7 and last 28 days, so you can spot e.g. one rope session in three weeks; groups: ${GROUPS_TEXT}), recent check-ins (sleep, feeling, alcohol, protein), sessions (with optional style tags, outdoor 0/1 and gym), gyms (names used so far with session count and last use; reuse these exact names), hangboard logs, plan for the past N days and next 7 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, week_summary (this week Monday to today, the same numbers as the app's weekly card: average sleep hours and quality, total drinks from check-ins dated this week, sessions logged and planned vs done, weighted finger load this week vs the usual weekly average with its baseline_status, rope vs boulder minutes and share), plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, and missing_benchmarks_last_7_days (planned tests with no result yet).`,
+      `Everything needed to recommend today's training: warnings (data problems to sort out first, if any), readiness (green/amber/red with reasons, from check-in, hard days, load vs baseline and plan, injury trend; the same call the app shows), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok; finger load weighted by session type and style tags, finger_raw unweighted), mix (minutes, load, session count and outdoor_minutes per type group for the last 7 and last 28 days, so you can spot e.g. one rope session in three weeks; groups: ${GROUPS_TEXT}), recent check-ins (sleep, feeling, alcohol, protein), sessions (with optional style tags, outdoor 0/1 and gym), gyms (names used so far with session count and last use; reuse these exact names), hangboard logs, plan for the past N days and next 7 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, week_summary (this week Monday to today, the same numbers as the app's weekly card: average sleep hours and quality, total drinks from check-ins dated this week, sessions logged and planned vs done, weighted finger load this week vs the usual weekly average with its baseline_status, rope vs boulder minutes and share), plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, missing_benchmarks_last_7_days (planned tests with no result yet), and coach (open_questions, answered_questions not used yet, last_run of the daily review).`,
     inputSchema: {
       type: "object",
       properties: {
@@ -257,12 +268,17 @@ const TOOLS: Tool[] = [
           },
         },
         replace_dates: { type: "boolean", default: true },
+        keep_app_entries: {
+          type: "boolean",
+          default: false,
+          description: "When replacing, keep entries the climber added by hand (source 'app') or set a status on. The daily review always passes true.",
+        },
       },
       required: ["entries"],
     },
     run: async (a, env) => {
       const entries = a.entries as PlanEntry[];
-      await setPlan(env.DB, entries, a.replace_dates ?? true);
+      await setPlan(env.DB, entries, a.replace_dates ?? true, { source: "coach", keepAppEntries: a.keep_app_entries === true });
       return { saved: entries.length };
     },
   },
@@ -393,17 +409,21 @@ const TOOLS: Tool[] = [
     },
   },
   ...WRITE_TOOLS,
+  ...COACH_TOOLS,
   CHECKLIST_TOOL,
   {
     name: "list_issues",
-    description: "List issues on the app's GitHub repo (roadmap, ideas, bugs). Use before report_issue to avoid duplicates.",
+    description: "List issues on the app's GitHub repo (roadmap, ideas, bugs) and its open milestones. Use before report_issue to avoid duplicates.",
     inputSchema: {
       type: "object",
       properties: { state: { type: "string", enum: ["open", "closed", "all"], default: "open" } },
     },
     annotations: { readOnlyHint: true, openWorldHint: true },
     enabled: githubEnabled,
-    run: async (a, env) => listIssues(env, a.state ?? "open"),
+    run: async (a, env) => {
+      const [issues, milestones] = await Promise.all([listIssues(env, a.state ?? "open"), listMilestones(env)]);
+      return { issues, milestones };
+    },
   },
   {
     name: "report_issue",
@@ -415,12 +435,16 @@ const TOOLS: Tool[] = [
         title: { type: "string", description: "Short and specific, e.g. 'Rest timer should vibrate on Android'" },
         body: { type: "string", description: "Markdown: what and why, and where in the app if known" },
         labels: { type: "array", items: { type: "string", enum: ISSUE_LABELS } },
+        priority: { type: "string", enum: PRIORITIES, description: `Adds a priority label: ${PRIORITY_TEXT}` },
+        milestone: { type: "string", description: "Title of an open milestone (from list_issues), e.g. for when it should be done" },
+        add_to_roadmap: { type: "boolean", default: true, description: "List it in the pinned roadmap issue, under its milestone's section" },
       },
       required: ["title", "body"],
     },
     annotations: { openWorldHint: true },
     enabled: githubEnabled,
-    run: async (a, env) => createIssue(env, a.title, a.body, a.labels),
+    run: async (a, env) =>
+      createIssue(env, a.title, a.body, { labels: a.labels, priority: a.priority, milestone: a.milestone, addToRoadmap: a.add_to_roadmap }),
   },
 ];
 

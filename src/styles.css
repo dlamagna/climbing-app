@@ -1159,3 +1159,42 @@ button {
 .entry.warmup {
   padding-left: 14px;
 }
+
+/* Daily coach review (#52) */
+.coach-question {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.coach-question:first-of-type {
+  padding-top: 0;
+}
+.coach-question p {
+  margin: 0;
+}
+.coach-question .row textarea {
+  flex: 1;
+}
+.coach-update {
+  margin-top: 8px;
+}
+.coach-update p {
+  margin: 0;
+}
+.feedback-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.feedback-list li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.feedback-list li:last-child {
+  border-bottom: none;
+}
+.feedback-list p {
+  margin: 0 0 4px;
+}

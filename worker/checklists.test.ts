@@ -134,7 +134,7 @@ describe("prompts", () => {
     return { date: date ?? "2026-10-18", today: "2026-10-18", injuries, plan: date === "2026-10-17" ? [] : [limit] };
   };
 
-  it("lists both prompts per the spec shape", async () => {
+  it("lists the prompts per the spec shape", async () => {
     const r = await handlePromptRequest("prompts/list", {}, load);
     expect(r).toEqual({
       prompts: [
@@ -145,8 +145,16 @@ describe("prompts", () => {
           description: expect.any(String),
           arguments: [{ name: "date", description: expect.any(String), required: false }],
         },
+        { name: "daily_review", title: expect.any(String), description: expect.any(String), arguments: [] },
       ],
     });
+  });
+
+  it("gets daily_review without loading a checklist", async () => {
+    calls.length = 0;
+    const r: any = await handlePromptRequest("prompts/get", { name: "daily_review" }, load);
+    expect(calls).toEqual([]);
+    expect(r.messages[0].content.text).toContain("start_daily_review");
   });
 
   it("gets a prompt as one user message carrying the checklist", async () => {

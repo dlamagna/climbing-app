@@ -22,6 +22,7 @@ import {
   upsertCheckin,
 } from "./db";
 import { parseExpectedBenchmarks, sessionBenchmarkWrites } from "./benchmarks";
+import { addFeedback, answerQuestion, listFeedback } from "./coach";
 import { BadRequest } from "./errors";
 import { buildExport, exportFilename, quoteIdent, toCsv, userTables } from "./export";
 import {
@@ -363,7 +364,7 @@ api.post("/plan", async (c) => {
   const e = await c.req.json();
   if (!isDate(e.date) || !e.title) throw new BadRequest("date and title are required");
   e.expected_benchmarks = badRequestOn(() => parseExpectedBenchmarks(e.expected_benchmarks));
-  await setPlan(c.env.DB, [e], false);
+  await setPlan(c.env.DB, [e], false, { source: "app" });
   return c.json({ ok: true });
 });
 
@@ -371,6 +372,16 @@ api.delete("/plan/:id", async (c) => {
   await c.env.DB.prepare("DELETE FROM plan WHERE id = ?").bind(Number(c.req.param("id"))).run();
   return c.json({ ok: true });
 });
+
+// The climber's answer to a coach question (#52): { answer } or { skip: true }.
+api.put("/coach/questions/:id", async (c) => {
+  const today = todayIn((await getProfile(c.env.DB)).timezone);
+  return c.json(await answerQuestion(c.env.DB, Number(c.req.param("id")), await c.req.json(), today));
+});
+
+// App feedback (#52): typed in the app, triaged into GitHub issues by the daily coach review.
+api.get("/feedback", async (c) => c.json(await listFeedback(c.env.DB)));
+api.post("/feedback", async (c) => c.json({ id: await addFeedback(c.env.DB, await c.req.json(), clientId(c)) }));
 
 api.get("/benchmarks", async (c) => {
   const { results } = await c.env.DB.prepare("SELECT * FROM benchmarks ORDER BY date DESC, id DESC").all();

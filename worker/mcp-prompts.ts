@@ -1,6 +1,7 @@
 // MCP prompts for voice-note logging (#18): "morning_log" and "training_log" serve the checklists from
 // worker/checklists.ts, and the get_log_checklist tool returns the same text for clients that don't surface
 // prompts. Data loading is injected (ChecklistLoader), so the JSON-RPC handling is unit tested without D1.
+// "daily_review" (#52) starts the scheduled coach review; its steps come from start_daily_review.
 
 import {
   CHECKLIST_KINDS,
@@ -84,9 +85,23 @@ export const PROMPTS = [
   },
 ];
 
+export const REVIEW_PROMPT = {
+  name: "daily_review",
+  title: "Daily coach review",
+  description:
+    "The scheduled daily review: checks what was logged since the last run and, when something changed, adjusts the coming plan, leaves a coach note and asks the climber questions in the app.",
+  arguments: [],
+};
+
+export const REVIEW_PROMPT_TEXT =
+  "Run the daily coach review for the climbing app: call start_daily_review and follow its instructions exactly.";
+
 // prompts/list and prompts/get. Returns the JSON-RPC result, or throws InvalidParams (-32602).
 export async function handlePromptRequest(method: "prompts/list" | "prompts/get", params: any, load: ChecklistLoader) {
-  if (method === "prompts/list") return { prompts: PROMPTS.map(({ kind: _kind, ...p }) => p) };
+  if (method === "prompts/list") return { prompts: [...PROMPTS.map(({ kind: _kind, ...p }) => p), REVIEW_PROMPT] };
+  if (params?.name === REVIEW_PROMPT.name) {
+    return { description: REVIEW_PROMPT.description, messages: [{ role: "user", content: { type: "text", text: REVIEW_PROMPT_TEXT } }] };
+  }
   const prompt = PROMPTS.find((p) => p.name === params?.name);
   if (!prompt) throw new InvalidParams(`Unknown prompt: ${params?.name}`);
   const date = prompt.kind === "training" ? params?.arguments?.date : undefined;

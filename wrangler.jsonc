@@ -21,7 +21,9 @@
 	},
 	"vars": {
 		// Repo the optional report_issue / list_issues MCP tools write to (needs the GITHUB_TOKEN secret).
-		"GITHUB_REPO": "dlamagna/climbing-app"
+		"GITHUB_REPO": "dlamagna/climbing-app",
+		// Pinned roadmap issue: issues filed through report_issue are added to its checklist.
+		"GITHUB_ROADMAP_ISSUE": "14"
 	},
 	"d1_databases": [
 		{

@@ -121,6 +121,35 @@ export interface CoachNote {
   text: string;
 }
 
+// Questions the daily coach review asks (worker/coach.ts); the Today screen shows the open ones.
+export interface CoachQuestion {
+  id: number;
+  question: string;
+  why: string | null;
+  options: string[]; // [] = free text
+  allow_text: number; // 1 = a typed answer is allowed besides the chips
+  expires_on: string | null;
+  status: "open" | "answered" | "skipped" | "expired" | "closed";
+}
+
+export interface CoachRun {
+  id: number;
+  outcome: "updated" | "no_change";
+  summary: string | null;
+  changes: string[];
+  created_at: string; // UTC timestamp
+}
+
+export interface AppFeedback {
+  id: number;
+  text: string;
+  status: "new" | "filed" | "duplicate" | "declined";
+  issue_number: number | null;
+  issue_url: string | null;
+  reply: string | null;
+  created_at: string; // UTC timestamp
+}
+
 export interface WeekLoad {
   week_start: string;
   total: number;
@@ -152,6 +181,8 @@ export interface TodayView {
   load: LoadStats;
   readiness?: Readiness; // computed by the worker (worker/readiness.ts); missing in older cached responses
   week?: WeekSummaryView; // this week so far (worker/weekSummary.ts); missing in older cached responses
+  coach_questions?: CoachQuestion[]; // open questions from the daily review; missing in older cached responses
+  coach_update?: CoachRun | null; // the last review that changed something
 }
 
 export interface HistoryView {
