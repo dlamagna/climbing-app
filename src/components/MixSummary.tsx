@@ -1,18 +1,21 @@
 // Training mix for a period (#32): time per type group first (endurance comes from time on the wall),
 // load second, plus rope vs boulder share of climbing time.
 import { type MixPeriod } from "../calendar";
+import { gymsText } from "../../worker/gyms";
 import { CLIMBING_GROUPS, type Mix, TYPE_GROUPS, climbingSummary, formatMinutes } from "../../worker/typeGroups";
 import { Chips } from "./ui";
 import { GroupSwatch } from "./typeGroups";
 
 export function MixSummary({
   mix,
+  gyms = [],
   period,
   onPeriod,
   monthName,
   loading,
 }: {
   mix: Mix | null; // null while the month on screen is loading
+  gyms?: { name: string; sessions: number }[]; // sessions per gym in the period (#48)
   period: MixPeriod;
   onPeriod: (p: MixPeriod) => void;
   monthName: string; // "This month" or the calendar month's name
@@ -66,6 +69,12 @@ export function MixSummary({
               </li>
             ))}
           </ul>
+          {gyms.length > 0 && (
+            <p className="small">
+              <span className="muted">Gyms: </span>
+              {gymsText(gyms)}
+            </p>
+          )}
         </>
       )}
     </div>

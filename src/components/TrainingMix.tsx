@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useApi } from "../api";
 import { type MixPeriod, monthEnd, monthOf, monthStart, periodRange } from "../calendar";
 import type { Session } from "../types";
+import { gymCounts } from "../../worker/gyms";
 import { groupMix, inRange } from "../../worker/typeGroups";
 import { MixSummary } from "./MixSummary";
 import { SessionCalendar } from "./SessionCalendar";
@@ -20,7 +21,9 @@ export function TrainingMix({ sessions, from, today }: { sessions: Session[]; fr
 
   const range = periodRange(period, today, month);
   const pool = period === "month" ? monthSessions : sessions;
-  const mix = pool && groupMix(inRange(pool, range.from, range.to));
+  const inPeriod = pool && inRange(pool, range.from, range.to);
+  const mix = inPeriod && groupMix(inPeriod);
+  const gyms = inPeriod ? gymCounts(inPeriod) : [];
   const monthName =
     month === monthOf(today)
       ? "This month"
@@ -33,7 +36,7 @@ export function TrainingMix({ sessions, from, today }: { sessions: Session[]; fr
         {older && monthApi.error && <p className="error small">{monthApi.error}</p>}
       </Card>
       <Card title="Training mix">
-        <MixSummary mix={mix} period={period} onPeriod={setPeriod} monthName={monthName} loading={older && monthApi.loading} />
+        <MixSummary mix={mix} gyms={gyms} period={period} onPeriod={setPeriod} monthName={monthName} loading={older && monthApi.loading} />
       </Card>
     </>
   );

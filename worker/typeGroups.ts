@@ -41,6 +41,7 @@ export interface MixSession {
   duration_min: number;
   rpe: number;
   outdoor?: number | boolean | null; // sessions.outdoor (1 = outdoors); missing = indoor
+  gym?: string | null; // sessions.gym (#48)
 }
 
 export interface GroupTotals {

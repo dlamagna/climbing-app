@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { isQueued, savedToast, send, toast, useApi } from "../api";
 import { benchmarkBody } from "../benchmarkInputs";
 import { type InjuryDraft, EMPTY_DRAFT, QuickInjury, draftBody } from "../components/injury";
+import { GymPicker } from "../components/GymPicker";
 import { BenchmarkFields, useBenchmarkInputs } from "../components/plannedBenchmarks";
 import { NoteSuggestions } from "../components/noteSuggestions";
 import { TagPicker, takesTags } from "../components/TagPicker";
@@ -9,6 +10,7 @@ import { Chips, DatePicker, Field, PageHeader, Stepper, range } from "../compone
 import { localToday } from "../dates";
 import { type NoteSuggestions as Suggestions, noteSuggestions } from "../painWords";
 import { type Injury, type Readiness, SESSION_TYPES, type Session, type TodayView } from "../types";
+import { type KnownGym } from "../../worker/gyms";
 import { isHardSession } from "../../worker/readiness";
 import { type SessionTag, parseTags } from "../../worker/tags";
 import { isClimbingType } from "../../worker/typeGroups";
@@ -60,6 +62,9 @@ function SessionForm({ session }: { session: Session | null }) {
   const [notes, setNotes] = useState(session?.notes ?? "");
   const [tags, setTags] = useState<SessionTag[]>(parseTags(session?.tags));
   const [outdoor, setOutdoor] = useState(Boolean(session?.outdoor)); // indoors unless picked (#33)
+  const [gym, setGym] = useState(session?.gym ?? "");
+  const [gymTouched, setGymTouched] = useState(Boolean(session));
+  const { data: gyms } = useApi<KnownGym[]>("/gyms");
   const [injury, setInjury] = useState<InjuryDraft | null>(null);
   const [linked, setLinked] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -67,6 +72,10 @@ function SessionForm({ session }: { session: Session | null }) {
   const { data: injuries } = useApi<{ active: Injury[] }>("/injuries");
   const { data: todayView } = useApi<TodayView>(session ? null : `/today?date=${localToday()}`); // for readiness
   const tests = useBenchmarkInputs(date, session?.benchmarks);
+  // A new session starts at the most recently used gym (one tap to clear), to keep logging to a few taps.
+  useEffect(() => {
+    if (!gymTouched && gyms?.length) setGym(gyms[0].name);
+  }, [gyms, gymTouched]);
   const ready = type !== null && rpe !== null && (!injury || injury.part !== null);
 
   // After saving, a note that mentions a tweak or a healed injury gets a one-tap follow-up instead of
@@ -94,6 +103,7 @@ function SessionForm({ session }: { session: Session | null }) {
         notes: notes.trim() || null,
         tags: takesTags(type) ? tags : [], // kept while switching types, only sent for climbing ones
         outdoor: isClimbingType(type) && outdoor, // same: non-climbing types are always indoors
+        gym: gym.trim() || null,
         new_injury: injury && { ...draftBody(injury), link: linked },
         benchmarks: benchmarkBody(tests.inputs),
       };
@@ -144,6 +154,16 @@ function SessionForm({ session }: { session: Session | null }) {
             />
           </Field>
         )}
+        <Field label="Gym" hint="optional">
+          <GymPicker
+            value={gym}
+            gyms={gyms ?? []}
+            onChange={(v) => {
+              setGym(v);
+              setGymTouched(true);
+            }}
+          />
+        </Field>
         {takesTags(type) && <TagPicker value={tags} onChange={setTags} />}
         <Field label="How long">
           <div className="row">

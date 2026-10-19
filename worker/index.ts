@@ -7,8 +7,10 @@ import {
   getProfile,
   history,
   insertSession,
+  knownGyms,
   loadStats,
   moveCheckin,
+  resolveGym,
   sessionBenchmarkStmts,
   setPlan,
   sessionsBetween,
@@ -38,6 +40,7 @@ import {
 } from "./injuries";
 import { tagsColumn, tagsError } from "./tags";
 import { handleMcp } from "./mcp";
+import { GYM_MESSAGE, isGymInput } from "./gyms";
 import { deleteSession, outdoorColumn, outdoorError } from "./sessions";
 import { PLAN_STATUSES, isPlanStatus } from "./plan";
 import { deleteTimerSession, insertTimerLog, setTimerSessionRpe } from "./timerLog";
@@ -80,10 +83,12 @@ async function sessionBody(c: C) {
   if (tagError) throw new BadRequest(tagError);
   const outError = outdoorError(s.outdoor, s.type);
   if (outError) throw new BadRequest(outError);
+  if (s.gym !== undefined && !isGymInput(s.gym)) throw new BadRequest(GYM_MESSAGE);
   if (s.new_injury) parseNewInjury(s.new_injury);
   s.benchmark_writes = badRequestOn(() => sessionBenchmarkWrites(s.benchmarks));
   s.tags = tagsColumn(s.tags); // missing tags clear them on edit, like the other optional fields
   s.outdoor = outdoorColumn(s.outdoor); // missing = indoors (also on edit)
+  s.gym = await resolveGym(c.env.DB, s.gym); // missing clears it on edit; known spelling reused (#48)
   return s;
 }
 
@@ -215,6 +220,9 @@ api.put("/sessions/:id", async (c) => {
   await sessionInjury(c, s, id);
   return c.json({ ok: true });
 });
+
+// Gyms used so far, most recently used first, for the Log page's picker (#48).
+api.get("/gyms", async (c) => c.json(await knownGyms(c.env.DB)));
 
 api.delete("/sessions/:id", async (c) => {
   await deleteSession(c.env.DB, Number(c.req.param("id")));

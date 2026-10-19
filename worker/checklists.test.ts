@@ -74,6 +74,7 @@ describe("trainingChecklist", () => {
         "- What you worked on, how your fingers felt",
         "- Optional: style tags (crimpy, open-hand, slab, vertical, overhang, board, technique, projecting, volume)",
         "- Optional: indoor or outdoor? (boulder, board, lead, toprope only; indoor if not said)",
+        "- Optional: which gym?",
         "- Nothing planned for Sun 18 Oct. Was this a planned session from another day?",
         "- Optional: any test / benchmark results",
         "- Optional: new tweak or injury",

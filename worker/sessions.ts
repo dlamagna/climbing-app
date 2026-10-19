@@ -6,6 +6,7 @@ import { BadRequest, NotFound } from "./errors";
 import { isIsoDate } from "./injury-dates";
 import { type FieldSpec, isInt, isString, oneOf, pickPatch, updateByIdSql } from "./partial";
 import { SESSION_TAGS, TAG_LIST_MESSAGE, TAG_TYPES, TAG_TYPE_MESSAGE, isTagList, tagsColumn } from "./tags";
+import { GYM_MESSAGE, isGymInput, normalizeGym } from "./gyms";
 import { isRpe } from "./timerSession";
 import { isClimbingType } from "./typeGroups";
 
@@ -50,6 +51,14 @@ export const SESSION_FIELDS: Record<string, FieldSpec> = {
       items: { type: "string", enum: SESSION_TAGS },
       description: `Style tags (${TAG_TYPES.join(", ")} only); replaces the whole list, [] or null clears them. Weight finger load.`,
     },
+  },
+  // Free text (#48, worker/gyms.ts). Callers map it onto an existing spelling first (db.resolveGym).
+  gym: {
+    check: isGymInput,
+    message: GYM_MESSAGE,
+    nullable: true,
+    toDb: normalizeGym,
+    schema: { type: ["string", "null"], description: "Gym the session was at; reuse a name from get_overview's gyms. null clears it" },
   },
   // Stored 0/1. Only on climbing types: see applyTypeRules. Not nullable (false = indoors).
   outdoor: {

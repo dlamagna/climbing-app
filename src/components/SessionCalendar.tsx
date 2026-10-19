@@ -83,7 +83,7 @@ export function SessionCalendar({
             <a key={s.id} href={`#/log?edit=${s.id}`} aria-label={`Edit ${sessionLabel(s)} session`}>
               <GroupMarker group={groupOf(s.type)} outdoor={Boolean(s.outdoor)} />
               <span>
-                <strong>{typeLabel(s.type)}</strong> {s.duration_min} min{s.outdoor ? " · outdoor" : ""} · effort {s.rpe}
+                <strong>{typeLabel(s.type)}</strong> {s.duration_min} min{s.outdoor ? " · outdoor" : ""}{s.gym ? ` · ${s.gym}` : ""} · effort {s.rpe}
                 {s.max_grade && ` · ${s.max_grade}`}
                 <span className="muted"> · load {s.duration_min * s.rpe}</span>
               </span>

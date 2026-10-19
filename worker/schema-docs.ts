@@ -59,6 +59,7 @@ export const COLUMN_DOCS: Record<string, Record<string, string>> = {
       "references plan.id: pinned link to the planned entry this session was (e.g. done on another day); NULL = matched automatically by date and type at read time. Cleared when that plan entry is deleted or replaced by set_plan",
     tags: "optional style tags (boulder/board/lead/toprope only), comma-separated in this order: crimpy, open-hand, slab, vertical, overhang, board, technique, projecting, volume; NULL = untagged. Weights finger load together with the type (worker/tags.ts)",
     outdoor: "1 = climbed outdoors (crag, boulders), 0 = indoors (default; all sessions before this column existed). Only climbing types (boulder/board/lead/toprope) can be 1",
+    gym: "where the session was done: a gym name, free text (#48). The app offers previously used names and reuses the stored spelling when the same name is typed with different case or spacing. NULL = not given",
   },
   hang_logs: {
     id: "row id",

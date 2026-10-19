@@ -1093,3 +1093,64 @@ button {
   margin: 0;
   font-variant-numeric: tabular-nums;
 }
+
+/* Gym picker (#48): text box with a dropdown of gyms used before. */
+.combo {
+  position: relative;
+}
+.combo-input {
+  position: relative;
+}
+.combo-input input {
+  padding-right: 44px;
+}
+.combo-clear {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 40px;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 22px;
+  line-height: 1;
+}
+.combo-list {
+  position: absolute;
+  z-index: 20;
+  left: 0;
+  right: 0;
+  top: calc(100% + 4px);
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.25);
+  max-height: 240px;
+  overflow-y: auto;
+}
+.combo-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.combo-list li.active,
+.combo-list li:hover {
+  background: var(--surface-2);
+}
+.combo-list li.current > span:first-child {
+  font-weight: 600;
+}
+.combo-list li.current > span:first-child::before {
+  content: "✓ ";
+  color: var(--accent);
+}

@@ -7,6 +7,7 @@ import {
   computeWeekSummary,
   drinksText,
   fingerText,
+  gymsRowText,
   isEmptyWeek,
   mixText,
   sessionsText,
@@ -228,5 +229,19 @@ describe("empty week", () => {
   it("is not empty once there is a check-in or a plan", () => {
     expect(isEmptyWeek(computeWeekSummary(input({ checkins: [ci(MONDAY, 7, 2, 0)] })))).toBe(false);
     expect(isEmptyWeek(computeWeekSummary(input({ plan: [{ date: TODAY, type: "lead", intensity: null, status: "planned" }] })))).toBe(false);
+  });
+});
+
+describe("gyms (#48)", () => {
+  const s = (date: string, gym: string | null) => ({ date, type: "boulder", duration_min: 60, rpe: 6, gym });
+  it("counts this week's sessions per gym, leaving out last week and sessions without a gym", () => {
+    const w = computeWeekSummary(
+      input({ sessions: [s(SUNDAY_BEFORE, "Old Wall"), s(MONDAY, "Boulder Barn"), s(addDays(MONDAY, 1), null), s(TODAY, "Boulder Barn")] }),
+    );
+    expect(w.gyms).toEqual([{ name: "Boulder Barn", sessions: 2 }]);
+    expect(gymsRowText(w.gyms)).toBe("Boulder Barn ×2");
+  });
+  it("is empty with no gyms given", () => {
+    expect(gymsRowText(computeWeekSummary(input()).gyms)).toBeNull();
   });
 });

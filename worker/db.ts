@@ -13,6 +13,7 @@ import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, mondayOf, type Loa
 import { allColumns } from "./partial";
 import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, weekSummary } from "./plan";
 import { type ReadinessCheckin, type ReadinessInjury, readiness } from "./readiness";
+import { type KnownGym, canonicalGym, normalizeGym } from "./gyms";
 import { SESSION_COLUMNS, outdoorColumn, updateSessionFields } from "./sessions";
 import { type MixSession, mixWindows } from "./typeGroups";
 import { type WeekCheckin, computeWeekSummary } from "./weekSummary";
@@ -99,21 +100,36 @@ export interface Session {
   plan_id?: number | null; // pinned link to a plan entry (see worker/plan.ts); NULL = auto-matched
   tags?: string | null; // column value: comma-separated, see worker/tags.ts
   outdoor?: number | boolean | null; // 1/true = outdoors; missing = indoors (climbing types only, see worker/sessions.ts)
+  gym?: string | null; // free text (#48); pass it through resolveGym first
 }
 
 // clientId makes the insert idempotent: replaying the same write returns the original row's id.
 export async function insertSession(db: D1Database, s: Session, clientId: string | null = null): Promise<number> {
   const row = await db
     .prepare(
-      `INSERT INTO sessions (date, type, duration_min, rpe, max_grade, notes, plan_id, tags, outdoor, client_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
+      `INSERT INTO sessions (date, type, duration_min, rpe, max_grade, notes, plan_id, tags, outdoor, gym, client_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id`,
     )
     .bind(
       s.date, s.type, s.duration_min, s.rpe, s.max_grade ?? null, s.notes ?? null, s.plan_id ?? null, s.tags ?? null,
-      outdoorColumn(s.outdoor), clientId,
+      outdoorColumn(s.outdoor), normalizeGym(s.gym), clientId,
     )
     .first<{ id: number }>();
   return row?.id ?? (await idForClientId(db, "sessions", clientId!));
+}
+
+// Gyms used so far (#48), most recently used first: the app's dropdown and get_overview's gyms.
+export async function knownGyms(db: D1Database): Promise<KnownGym[]> {
+  return all<KnownGym>(
+    db,
+    "SELECT gym AS name, COUNT(*) AS sessions, MAX(date) AS last_used FROM sessions WHERE gym IS NOT NULL GROUP BY gym ORDER BY last_used DESC, sessions DESC",
+  );
+}
+
+// A gym typed with different case, accents or spacing is stored with the existing spelling.
+export async function resolveGym(db: D1Database, input: unknown): Promise<string | null> {
+  if (normalizeGym(input) === null) return null;
+  return canonicalGym(input, (await knownGyms(db)).map((g) => g.name));
 }
 
 export async function idForClientId(db: D1Database, table: "sessions" | "hang_logs" | "injuries", clientId: string): Promise<number> {
@@ -173,7 +189,7 @@ export async function getPlan(db: D1Database, from: string, to: string, today: s
     ),
     all<SessionRow>(
       db,
-      `SELECT id, date, type, duration_min, rpe, plan_id FROM sessions
+      `SELECT id, date, type, duration_min, rpe, plan_id, gym FROM sessions
        WHERE date BETWEEN ? AND ? OR plan_id IN (SELECT id FROM plan WHERE date BETWEEN ? AND ?)`,
       lo, hi, lo, hi,
     ),
@@ -330,7 +346,7 @@ function todayReadiness(
 // Everything Claude needs to answer "how should I train today?" in one call.
 export async function overview(db: D1Database, today: string, days: number) {
   const from = addDays(today, -(days - 1));
-  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests, mixRows, week] = await Promise.all([
+  const [profile, injuries, load, hist, plan, coachNotes, benchmarks, resolved, tests, mixRows, week, gyms] = await Promise.all([
     getProfile(db),
     activeInjuries(db),
     loadStats(db, today, 6),
@@ -342,6 +358,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     benchmarkOverview(db, today),
     all<MixSession>(db, "SELECT date, type, duration_min, rpe, outdoor FROM sessions WHERE date BETWEEN ? AND ?", addDays(today, -27), today),
     weekCheckins(db, today),
+    knownGyms(db),
   ]);
   return {
     today,
@@ -354,6 +371,7 @@ export async function overview(db: D1Database, today: string, days: number) {
     mix: mixWindows(mixRows, today),
     checkins: hist.checkins,
     sessions: hist.sessions,
+    gyms,
     hangboard: hist.hangs,
     plan_past_and_next_7_days: plan.entries,
     plan_adherence: adherence(plan.all, plan.sessions, from, today),

@@ -4,6 +4,7 @@ import {
   type WeekSummaryView,
   drinksText,
   fingerText,
+  gymsRowText,
   isEmptyWeek,
   mixText,
   sessionsText,
@@ -19,6 +20,7 @@ export function WeekSummary({ week }: { week?: WeekSummaryView }) {
     ["Sessions", sessionsText(week.sessions), ""],
     ["Fingers", fingerText(week.finger), ""],
     ["Climbing", mixText(week.mix), "no rope or boulder yet"],
+    ["Gyms", week.gyms ? gymsRowText(week.gyms) : null, "none given yet"],
   ];
   return (
     <Card title="This week">
