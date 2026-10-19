@@ -128,6 +128,8 @@ export interface CoachQuestion {
   why: string | null;
   options: string[]; // [] = free text
   allow_text: number; // 1 = a typed answer is allowed besides the chips
+  multi?: number; // 1 = several chips can be picked (missing in older cached responses)
+  topic?: string | null; // 'week_days:<Monday>' for the weekly question the server creates
   expires_on: string | null;
   status: "open" | "answered" | "skipped" | "expired" | "closed";
 }

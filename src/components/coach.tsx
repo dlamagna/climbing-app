@@ -1,8 +1,10 @@
 // The daily coach review on the Today screen (#52): questions to answer with a tap, and what the last review
-// changed. Answers go through the offline outbox like other writes and reach the coach on its next run.
+// changed. Answers go through the offline outbox like other writes and reach the coach on its next run. The
+// weekly "which days will you climb" question (#54) also opens as a pop-up.
 import { useState } from "react";
 import { savedToast, send } from "../api";
 import { addDays, dayLabel, localDateOf } from "../dates";
+import { isWeekly, multiAnswer, togglePick } from "../coachAnswers";
 import type { CoachQuestion, CoachRun } from "../types";
 import { Card } from "./ui";
 
@@ -18,10 +20,12 @@ export function CoachQuestions({ questions, onAnswered }: { questions: CoachQues
   );
 }
 
-function QuestionItem({ q, onDone }: { q: CoachQuestion; onDone: () => void }) {
+function QuestionItem({ q, onDone, onLater }: { q: CoachQuestion; onDone: () => void; onLater?: () => void }) {
+  const multi = Boolean(q.multi);
   const freeText = q.options.length === 0;
   const [typing, setTyping] = useState(freeText);
   const [text, setText] = useState("");
+  const [picked, setPicked] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
 
   async function submit(body: { answer: string } | { skip: true }) {
@@ -36,6 +40,8 @@ function QuestionItem({ q, onDone }: { q: CoachQuestion; onDone: () => void }) {
     }
   }
 
+  const answer = multi ? multiAnswer(picked, q.options, text) : text.trim();
+
   return (
     <div className="coach-question">
       <p>
@@ -44,32 +50,97 @@ function QuestionItem({ q, onDone }: { q: CoachQuestion; onDone: () => void }) {
       {q.why && <p className="muted small">{q.why}</p>}
       {q.options.length > 0 && (
         <div className="chips wrap">
-          {q.options.map((o) => (
-            <button key={o} type="button" className="chip" disabled={busy} onClick={() => submit({ answer: o })}>
-              {o}
-            </button>
-          ))}
+          {q.options.map((o) =>
+            multi ? (
+              <button
+                key={o}
+                type="button"
+                aria-pressed={picked.includes(o)}
+                className={picked.includes(o) ? "chip on" : "chip"}
+                onClick={() => setPicked((p) => togglePick(p, o))}
+              >
+                {o}
+              </button>
+            ) : (
+              <button key={o} type="button" className="chip" disabled={busy} onClick={() => submit({ answer: o })}>
+                {o}
+              </button>
+            ),
+          )}
         </div>
       )}
       {typing && (
         <div className="row">
-          <textarea rows={2} value={text} placeholder="Your answer" onChange={(e) => setText(e.target.value)} />
-          <button className="btn primary" disabled={busy || !text.trim()} onClick={() => submit({ answer: text.trim() })}>
-            Send
-          </button>
+          <textarea rows={2} value={text} placeholder={multi ? "Note (optional)" : "Your answer"} onChange={(e) => setText(e.target.value)} />
+          {!multi && (
+            <button className="btn primary" disabled={busy || !text.trim()} onClick={() => submit({ answer: text.trim() })}>
+              Send
+            </button>
+          )}
         </div>
+      )}
+      {multi && (
+        <button className="btn primary block" disabled={busy || !answer} onClick={() => submit({ answer })}>
+          Send
+        </button>
       )}
       <div className="row-between">
         {!typing && q.allow_text ? (
           <button type="button" className="link" onClick={() => setTyping(true)}>
-            Type an answer
+            {multi ? "Add a note" : "Type an answer"}
           </button>
         ) : (
           <span />
         )}
-        <button type="button" className="link muted" disabled={busy} onClick={() => submit({ skip: true })}>
-          Skip
-        </button>
+        <span className="row">
+          {onLater && (
+            <button type="button" className="link muted" disabled={busy} onClick={onLater}>
+              Later
+            </button>
+          )}
+          <button type="button" className="link muted" disabled={busy} onClick={() => submit({ skip: true })}>
+            Skip
+          </button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+const LATER_KEY = "climb.weeklyLater"; // question id -> the day "Later" was tapped
+
+function laterDay(id: number): string | null {
+  try {
+    return (JSON.parse(localStorage.getItem(LATER_KEY) ?? "{}") as Record<string, string>)[id] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function setLaterDay(id: number, day: string) {
+  try {
+    localStorage.setItem(LATER_KEY, JSON.stringify({ [id]: day }));
+  } catch {
+    // the pop-up just comes back next time
+  }
+}
+
+// The weekly question as a pop-up over Today. "Later" hides it until the next day (it stays as a card).
+export function WeeklyPopup({ questions, today, onAnswered }: { questions: CoachQuestion[]; today: string; onAnswered: (id: number) => void }) {
+  const q = questions.find(isWeekly);
+  const [hidden, setHidden] = useState<number | null>(null);
+  if (!q || hidden === q.id || laterDay(q.id) === today) return null;
+  return (
+    <div className="popup-backdrop" role="dialog" aria-modal="true" aria-label="This week">
+      <div className="popup card">
+        <QuestionItem
+          q={q}
+          onDone={() => onAnswered(q.id)}
+          onLater={() => {
+            setLaterDay(q.id, today);
+            setHidden(q.id);
+          }}
+        />
       </div>
     </div>
   );

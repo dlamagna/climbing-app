@@ -11,7 +11,9 @@ import {
   answerQuestion,
   askQuestion,
   changesSince,
+  NOT_THIS_WEEK,
   closeQuestions,
+  ensureWeeklyQuestion,
   lastRun,
   lastUpdate,
   listFeedback,
@@ -27,6 +29,7 @@ import {
   resolveFeedback,
   reviewDecision,
   startReview,
+  weeklyQuestion,
 } from "./coach";
 import { setPlan } from "./db";
 
@@ -39,6 +42,7 @@ describe("parseQuestion", () => {
       why: null,
       options: [],
       allow_text: true,
+      multi: false,
       expires_on: "2026-05-13",
     });
   });
@@ -59,7 +63,8 @@ describe("parseQuestion", () => {
     [{}, /question is required/],
     [{ question: "  " }, /question is required/],
     [{ question: "q", options: ["only one"] }, /at least 2 options/],
-    [{ question: "q", options: ["a", "b", "c", "d", "e", "f", "g"] }, /at most 6/],
+    [{ question: "q", options: ["a", "b", "c", "d", "e", "f", "g", "h", "i"] }, /at most 8/],
+    [{ question: "q", options: ["a", "b"], multi: "yes" }, /multi must be/],
     [{ question: "q", options: ["Yes", "yes"] }, /different/],
     [{ question: "q", options: "a,b" }, /must be a list/],
     [{ question: "q", options: ["a", ""] }, /each option is required/],
@@ -69,6 +74,35 @@ describe("parseQuestion", () => {
     [{ question: "x".repeat(301) }, /too long/],
   ])("rejects %j", (a, msg) => {
     expect(() => parseQuestion(a, TODAY)).toThrow(msg);
+  });
+});
+
+describe("multi questions", () => {
+  it("multi needs options", () => {
+    expect(parseQuestion({ question: "q", options: ["a", "b"], multi: true }, TODAY).multi).toBe(true);
+    expect(parseQuestion({ question: "q", multi: true }, TODAY).multi).toBe(false);
+  });
+  it("a chips-only multi answer must list options", () => {
+    const q = { options: ["Mon 4", "Tue 5"], allow_text: 0, multi: 1 };
+    expect(parseAnswer({ answer: "Mon 4, Tue 5" }, q)).toEqual({ answer: "Mon 4, Tue 5" });
+    expect(() => parseAnswer({ answer: "Mon 4, Fri 8" }, q)).toThrow(/some of/);
+  });
+});
+
+describe("weeklyQuestion", () => {
+  // 2026-05-04 is a Monday.
+  it("on Monday offers every day of the week and expires on Sunday", () => {
+    const q = weeklyQuestion("2026-05-04")!;
+    expect(q.options).toEqual(["Mon 4", "Tue 5", "Wed 6", "Thu 7", "Fri 8", "Sat 9", "Sun 10", NOT_THIS_WEEK]);
+    expect(q).toMatchObject({ multi: true, allow_text: true, expires_on: "2026-05-10", topic: "week_days:2026-05-04" });
+  });
+  it("later in the week offers only the remaining days, same topic", () => {
+    const q = weeklyQuestion("2026-05-06")!;
+    expect(q.options).toEqual(["Wed 6", "Thu 7", "Fri 8", "Sat 9", "Sun 10", NOT_THIS_WEEK]);
+    expect(q.topic).toBe("week_days:2026-05-04");
+  });
+  it("isn't created from Thursday on", () => {
+    for (const d of ["2026-05-07", "2026-05-09", "2026-05-10"]) expect(weeklyQuestion(d)).toBeNull();
   });
 });
 
@@ -277,6 +311,24 @@ describe("questions", () => {
     await askQuestion(db, parseQuestion({ question: "q", expires_on: TODAY }, TODAY), TODAY);
     expect(await openQuestions(db, TODAY)).toHaveLength(1);
     expect(await openQuestions(db, "2026-05-11")).toEqual([]);
+  });
+
+  it("creates the weekly question once per week, even after it was answered", async () => {
+    await ensureWeeklyQuestion(db, "2026-05-04");
+    await ensureWeeklyQuestion(db, "2026-05-05");
+    const [q] = await openQuestions(db, "2026-05-05");
+    expect(q).toMatchObject({ topic: "week_days:2026-05-04", multi: 1, options: expect.arrayContaining(["Mon 4", NOT_THIS_WEEK]) });
+    await answerQuestion(db, q.id, { answer: "Tue 5, Thu 7 - evenings only" }, "2026-05-05");
+    await ensureWeeklyQuestion(db, "2026-05-06");
+    expect(rows("SELECT COUNT(*) AS n FROM coach_questions")).toEqual([{ n: 1 }]);
+    await ensureWeeklyQuestion(db, "2026-05-07"); // Thursday: too late to ask
+    await ensureWeeklyQuestion(db, "2026-05-11"); // next Monday
+    expect(rows("SELECT topic FROM coach_questions ORDER BY id")).toEqual([{ topic: "week_days:2026-05-04" }, { topic: "week_days:2026-05-11" }]);
+  });
+
+  it("start_daily_review creates the weekly question too", async () => {
+    const r = await startReview(db, "2026-05-04");
+    expect(r.open_questions.map((q) => q.topic)).toEqual(["week_days:2026-05-04"]);
   });
 
   it("rejects a bad close list", async () => {

@@ -9,7 +9,7 @@ import {
   parseExpectedBenchmarks,
 } from "./benchmarks";
 import { CHECKIN_COLUMNS, checkinUpsertSql } from "./checkins";
-import { lastRun, lastUpdate, openQuestions, pendingQuestions } from "./coach";
+import { ensureWeeklyQuestion, lastRun, lastUpdate, openQuestions, pendingQuestions } from "./coach";
 import { FINGER_TYPES, addDays, computeLoadStats, loadWindow, mondayOf, type LoadRow } from "./load";
 import { allColumns } from "./partial";
 import { type PlanRow, type PlanStatus, type SessionRow, adherence, planView, weekSummary } from "./plan";
@@ -317,6 +317,7 @@ function weekSummaryOf(
 }
 
 export async function todayView(db: D1Database, today: string) {
+  await ensureWeeklyQuestion(db, today); // the weekly "which days" question (#54), before reading questions
   const [checkin, lastCheckin, plan, coachNotes, sessions, injuries, load, week, questions, coachUpdate] = await Promise.all([
     db.prepare("SELECT * FROM checkins WHERE date = ?").bind(today).first(),
     db.prepare("SELECT * FROM checkins WHERE date < ? ORDER BY date DESC LIMIT 1").bind(today).first(),

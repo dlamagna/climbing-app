@@ -172,6 +172,8 @@ export const COLUMN_DOCS: Record<string, Record<string, string>> = {
     skipped_at: "when the climber skipped it without answering (UTC timestamp)",
     closed_at: "when Claude closed it: answer used, or question withdrawn (UTC timestamp); closed questions are never shown again",
     run_id: "coach_runs.id of the last run before it was asked (NULL if none)",
+    multi: "1 = several chips can be picked; the answer lists them comma-separated",
+    topic: "unique key of a question the server creates itself: 'week_days:<Monday>' for the weekly 'which days will you climb' question (#54); NULL for questions Claude asks",
     created_at: CREATED_AT,
   },
   benchmarks: {

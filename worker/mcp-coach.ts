@@ -41,6 +41,7 @@ export const COACH_TOOLS: Tool[] = [
         why: { type: "string", description: "One line on why you ask, shown under the question" },
         options: { type: "array", items: { type: "string" }, maxItems: MAX_OPTIONS, description: "Answer chips, e.g. ['2', '3', '4+']; leave out for a free-text question" },
         allow_text: { type: "boolean", default: true, description: "With options: also allow a short typed answer" },
+        multi: { type: "boolean", default: false, description: "With options: several can be picked (the answer lists them comma-separated)" },
         expires_on: { ...dateSchema, description: `Last day to show it (default today + ${DEFAULT_EXPIRY_DAYS}, at most + ${MAX_EXPIRY_DAYS})` },
       },
       required: ["question"],

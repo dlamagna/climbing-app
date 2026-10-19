@@ -91,6 +91,10 @@ stops. Otherwise it:
 
 Every run is logged, and the Today screen shows what the last review changed.
 
+At the start of each week (first app open, Monday to Wednesday) the app also asks which days you plan to climb,
+as a pop-up with a chip per day and an optional note. That night's review plans the week's climbing on those
+days.
+
 To set it up, in Claude Code run `/schedule` (or create a routine on claude.ai/code). Pick a daily time
 after you usually train, for example 22:00, attach the climbing-app connector, and use this prompt:
 
