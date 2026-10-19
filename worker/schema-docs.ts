@@ -53,7 +53,7 @@ export const COLUMN_DOCS: Record<string, Record<string, string>> = {
     type: "boulder | board | lead | toprope | hangboard | strength | cardio | mobility | other. Lead and top rope were one type (lead) before toprope was added, so older rope sessions are all lead",
     duration_min: "duration in minutes",
     rpe: "effort 1..10; training load = duration_min * rpe",
-    max_grade: "hardest send, free text (e.g. '6C', 'V5', '7a')",
+    max_grade: "hardest send, free text (e.g. '6C', 'V5', '7a'); get_overview adds it parsed and converted as grade (worker/grades.ts)",
     notes: "free text",
     created_at: CREATED_AT,
     client_id: CLIENT_ID,

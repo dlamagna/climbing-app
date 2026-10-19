@@ -13,6 +13,7 @@ import { schemaOf } from "./partial";
 import { profileInjuryWarnings, rejectedProfileWarning, splitProfileUpdate } from "./profile-injury";
 import { annotateSchema } from "./schema-docs";
 import { GYM_MESSAGE, isGymInput } from "./gyms";
+import { parseGrade } from "./grades";
 import { OUTDOOR_TYPES, SESSION_TYPES, outdoorColumn, outdoorError } from "./sessions";
 import { TYPE_GROUPS } from "./typeGroups";
 import {
@@ -168,6 +169,15 @@ they describe the style and outdoor: true when they climbed outside (indoors whe
 unit. A new tweak or injury: report_injury with started_on = the session date and session_id = the logged
 session's id.
 
+Grades: sessions.max_grade is free text in whatever system the gym uses. get_overview adds a parsed grade to
+each session it can read (discipline boulder or route, the system it was written in, a ladder index and the same
+grade in each system of that discipline: Font and V for boulders, French and YDS for routes) and grade_progress
+(per discipline: the hardest grade in the last 28 days, the 28 before and ever, and the change in ladder steps).
+Compare and track grades through grade.index and grade_progress, not the raw text: "6C" and "V5" are about the same, and
+"6c" on a lead session is a French route grade. Never compare or convert across boulder and route, the scales
+don't map onto each other. A session with max_grade but no grade has text that isn't a grade (e.g. "project").
+convert_grade converts a single grade, e.g. to write the plan in the system the climber's gym uses.
+
 Use query for ad-hoc analysis (read-only SQL, SQLite dialect; call get_schema first: its column
 comments, with units and scales, come from the server code, since the database itself keeps none).
 
@@ -191,7 +201,7 @@ const TOOLS: Tool[] = [
   {
     name: "get_overview",
     description:
-      `Everything needed to recommend today's training: warnings (data problems to sort out first, if any), readiness (green/amber/red with reasons, from check-in, hard days, load vs baseline and plan, injury trend; the same call the app shows), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok; finger load weighted by session type and style tags, finger_raw unweighted), mix (minutes, load, session count and outdoor_minutes per type group for the last 7 and last 28 days, so you can spot e.g. one rope session in three weeks; groups: ${GROUPS_TEXT}), recent check-ins (sleep, feeling, alcohol, protein), sessions (with optional style tags, outdoor 0/1 and gym), gyms (names used so far with session count and last use; reuse these exact names), hangboard logs, plan for the past N days and next 9 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, week_summary (this week Monday to today, the same numbers as the app's weekly card: average sleep hours and quality, total drinks from check-ins dated this week, sessions logged and planned vs done, weighted finger load this week vs the usual weekly average with its baseline_status, rope vs boulder minutes and share), plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, missing_benchmarks_last_7_days (planned tests with no result yet), and coach (open_questions, answered_questions not used yet, last_run of the daily review, climbing_days: the days the climber last picked to climb, as dates, or null).`,
+      `Everything needed to recommend today's training: warnings (data problems to sort out first, if any), readiness (green/amber/red with reasons, from check-in, hard days, load vs baseline and plan, injury trend; the same call the app shows), profile/goals, active injuries with daily updates (pain, trend, stiffness, red flags, load the day before), recently resolved injuries, training load stats (ratios carry baseline_status: building / partial / ok; finger load weighted by session type and style tags, finger_raw unweighted), mix (minutes, load, session count and outdoor_minutes per type group for the last 7 and last 28 days, so you can spot e.g. one rope session in three weeks; groups: ${GROUPS_TEXT}), recent check-ins (sleep, feeling, alcohol, protein), sessions (with optional style tags, outdoor 0/1, gym, and grade: max_grade parsed into discipline, system, ladder index and its equivalents, when readable), grade_progress (per discipline boulder/route: hardest grade in the last 28 days vs the 28 before vs ever, with dates and change in ladder steps), gyms (names used so far with session count and last use; reuse these exact names), hangboard logs, plan for the past N days and next 9 (each entry with status and expected_benchmarks), plan adherence per day, week-so-far counts, week_summary (this week Monday to today, the same numbers as the app's weekly card: average sleep hours and quality, total drinks from check-ins dated this week, sessions logged and planned vs done, weighted finger load this week vs the usual weekly average with its baseline_status, rope vs boulder minutes and share), plan_conflicts, recent coach notes and benchmarks, benchmark_names already in use, missing_benchmarks_last_7_days (planned tests with no result yet), and coach (open_questions, answered_questions not used yet, last_run of the daily review, climbing_days: the days the climber last picked to climb, as dates, or null).`,
     inputSchema: {
       type: "object",
       properties: {
@@ -231,6 +241,30 @@ const TOOLS: Tool[] = [
     run: async (a, env) => {
       const { results } = await env.DB.prepare(readOnlySql(a.sql)).all();
       return results.length > 500 ? { truncated: true, rows: results.slice(0, 500) } : results;
+    },
+  },
+  {
+    name: "convert_grade",
+    description:
+      "Convert a climbing grade within its discipline: boulder Font <-> V, route French <-> YDS (never boulder <-> route). Returns the discipline, the system it was written in, its ladder index (for comparing grades; .5 = between two rungs) and the grade in each system. Slash grades (6b/6b+, V4/5) are read as their midpoint.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        grade: { type: "string", description: "e.g. '6C', 'V5', '7a+', '5.11b', '6b/6b+'" },
+        session_type: {
+          type: "string",
+          enum: [...SESSION_TYPES, "route"],
+          description:
+            "Session type or 'route': tells Font from French for grades like '6c' (boulder/board = Font, lead/toprope/route = French). Without it an uppercase letter is Font, lowercase French.",
+        },
+      },
+      required: ["grade"],
+    },
+    annotations: { readOnlyHint: true },
+    run: async (a) => {
+      const grade = parseGrade(a.grade, a.session_type);
+      if (grade) return { input: a.grade, ...grade };
+      return `Can't read ${JSON.stringify(a.grade ?? "")} as a grade. Understood: Font 3-9A (e.g. 6C+), V VB-V17, French 3-9c (e.g. 7a+), YDS 5.4-5.15d (e.g. 5.11b), and slash grades of these (6b/6b+, V4/5). Number-only grades like 5+ need session_type.`;
     },
   },
   {
