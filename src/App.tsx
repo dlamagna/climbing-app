@@ -3,6 +3,8 @@ import { type ToastMessage, checkToken, flushOutbox, get, getToken, pendingCount
 import Benchmarks from "./pages/Benchmarks";
 import CheckinEdit from "./pages/CheckinEdit";
 import Feedback from "./pages/Feedback";
+import GradeProgress from "./pages/GradeProgress";
+import Grades from "./pages/Grades";
 import History from "./pages/History";
 import Injuries from "./pages/Injuries";
 import Log from "./pages/Log";
@@ -24,6 +26,8 @@ const ROUTES: Record<string, ComponentType> = {
   benchmarks: Benchmarks,
   settings: Settings,
   feedback: Feedback,
+  grades: Grades,
+  "grade-progress": GradeProgress,
 };
 
 const TABS = [
@@ -33,7 +37,7 @@ const TABS = [
   { route: "history", label: "History", icon: "▤" },
   { route: "more", label: "More", icon: "≡" },
 ];
-const MORE_ROUTES = ["more", "plan", "injuries", "benchmarks", "settings", "feedback"];
+const MORE_ROUTES = ["more", "plan", "injuries", "benchmarks", "settings", "feedback", "grades", "grade-progress"];
 
 const currentPath = () => location.hash.replace(/^#\/?/, "");
 

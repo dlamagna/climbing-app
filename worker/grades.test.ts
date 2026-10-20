@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LADDERS, disciplineOf, gradeHint, gradeLabels, gradeProgress, parseGrade } from "./grades";
+import { LADDERS, disciplineOf, gradeHint, gradeLabels, gradeProgress, gradeTable, gradeTimeline, parseGrade, usualSystem } from "./grades";
 import { SESSION_TYPES } from "./sessions";
 
 const p = (text: string, context?: string) => parseGrade(text, context);
@@ -203,5 +203,73 @@ describe("gradeProgress", () => {
     expect(progress.boulder?.best_ever.date).toBe("2026-06-15");
     expect(progress.route).toBeUndefined();
     expect(gradeProgress([], TODAY)).toEqual({});
+  });
+});
+
+describe("gradeTable", () => {
+  it("has one row per rung, with a V grade spanning the rungs it covers", () => {
+    const rows = gradeTable("boulder");
+    expect(rows).toHaveLength(LADDERS.boulder.rungs.length);
+    const v3 = rows.findIndex((r) => r.finer === "6A");
+    expect(rows[v3]).toMatchObject({ coarser: "V3", span: 2 });
+    expect(rows[v3 + 1]).toMatchObject({ finer: "6A+", coarser: null, span: 0 });
+    expect(rows.find((r) => r.finer === "7A")).toMatchObject({ coarser: "V6", span: 1 });
+  });
+
+  it("covers every rung exactly once with the spans", () => {
+    for (const d of ["boulder", "route"] as const) {
+      expect(gradeTable(d).reduce((n, r) => n + r.span, 0)).toBe(LADDERS[d].rungs.length);
+    }
+  });
+
+  it("writes a split YDS cell in short and merges 4c/5a under 5.7", () => {
+    const rows = gradeTable("route");
+    expect(rows.find((r) => r.finer === "6c+")?.coarser).toBe("5.11b/c");
+    expect(rows.find((r) => r.finer === "4c")).toMatchObject({ coarser: "5.7", span: 2 });
+  });
+});
+
+describe("gradeTimeline", () => {
+  const sessions = [
+    { date: "2026-03-01", type: "boulder", max_grade: "6B" },
+    { date: "2026-03-01", type: "board", max_grade: "V5" },
+    { date: "2026-03-01", type: "lead", max_grade: "6c" },
+    { date: "2026-03-10", type: "boulder", max_grade: "6A+" },
+    { date: "2026-04-20", type: "boulder", max_grade: "6C" },
+    { date: "2026-04-21", type: "boulder", max_grade: "project" },
+    { date: "2026-05-01", type: "boulder", max_grade: "7A" },
+  ];
+
+  it("keeps each day's hardest grade in its discipline, oldest first", () => {
+    const { days } = gradeTimeline(sessions, "boulder", "2026-04-30");
+    expect(days.map((d) => [d.date, d.grades])).toEqual([
+      ["2026-03-01", ["V5"]],
+      ["2026-03-10", ["6A+"]],
+      ["2026-04-20", ["6C"]],
+    ]);
+    expect(gradeTimeline(sessions, "route", "2026-04-30").days.map((d) => d.grades)).toEqual([["6c"]]);
+  });
+
+  it("gives the hardest of the 28 days ending on each day", () => {
+    const { days, best28 } = gradeTimeline(sessions, "boulder", "2026-04-30");
+    expect(best28.map((p) => p.index)).toEqual([days[0].index, days[0].index, days[2].index]);
+  });
+
+  it("lists grades tied for the day's hardest once each", () => {
+    const tie = [
+      { date: "2026-03-01", type: "boulder", max_grade: "6C" },
+      { date: "2026-03-01", type: "boulder", max_grade: "6c " },
+      { date: "2026-03-01", type: "board", max_grade: "6C" },
+    ];
+    expect(gradeTimeline(tie, "boulder", "2026-03-01").days[0].grades).toEqual(["6C", "6c"]);
+  });
+});
+
+describe("usualSystem", () => {
+  it("picks the system most grades were logged in, the finer one on a tie or with none", () => {
+    const s = (max_grade: string) => ({ date: "2026-03-01", type: "boulder", max_grade });
+    expect(usualSystem([s("V4"), s("V5"), s("6C")], "boulder")).toBe("v");
+    expect(usualSystem([s("V4"), s("6C")], "boulder")).toBe("font");
+    expect(usualSystem([], "route")).toBe("french");
   });
 });

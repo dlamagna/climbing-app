@@ -145,10 +145,10 @@ Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:loc
 | `worker/coach.ts`, `mcp-coach.ts` | Daily coach review: what changed since the last run, questions, climbing days, run log, app feedback ([docs](docs/daily-coach-review.md)) |
 | `worker/injuries.ts`, `sessions.ts`, `checkins.ts` | Validation and writes shared by the REST API and MCP (partial updates via `worker/partial.ts`) |
 | `worker/db.ts` | Queries shared by both, including training-load maths |
-| `worker/grades.ts` | Grade parsing and conversion (boulder Font <-> V, route French <-> YDS), the ladder index and `get_overview`'s `grade_progress`; also the Log page's grade hint |
+| `worker/grades.ts` | Grade parsing and conversion (boulder Font <-> V, route French <-> YDS), the ladder index and `get_overview`'s `grade_progress`; also the Log page's grade hint, the grade table and the hardest-grade chart (`src/grades.ts` is the app side) |
 | `worker/export.ts` | `GET /api/export` helpers: table list, CSV, filename |
 | `migrations/` | Schema and default timer presets (D1 strips SQL comments; column docs for `get_schema` live in `worker/schema-docs.ts`) |
-| `src/pages/` | Today, Log, Timer, History, Plan, Injuries, Benchmarks, Settings, Feedback |
+| `src/pages/` | Today, Log, Timer, History, Plan, Injuries, Benchmarks, Settings, Feedback, Grades (table), GradeProgress (hardest grade over time) |
 | `src/timer.ts` | Hangboard phase sequencing, beeps, screen wake lock |
 
 Training load = minutes × effort (1-10), compared with your average week over the previous four.

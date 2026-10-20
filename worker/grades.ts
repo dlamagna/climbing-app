@@ -288,3 +288,67 @@ export function gradeProgress(sessions: readonly GradedSession[], today: string)
   }
   return out;
 }
+
+// --- The app's grade table and chart ------------------------------------------------------------------
+
+export interface TableRow {
+  index: number;
+  finer: string;
+  coarser: string | null; // null when the row above's coarser grade also covers this one
+  span: number; // rows the coarser grade covers, from this one down (0 when coarser is null)
+}
+
+// The discipline's ladder as table rows, easiest first; a coarser grade covering several rungs in a row
+// ("V3" = 6A and 6A+) is one cell spanning them.
+export function gradeTable(d: Discipline): TableRow[] {
+  const rungs = LADDERS[d].rungs;
+  return rungs.map(([finer, coarser], i) => {
+    const label = joinCoarser(LADDERS[d].coarser, [...coarser]);
+    const same = (j: number) => rungs[j] && joinCoarser(LADDERS[d].coarser, [...rungs[j][1]]) === label;
+    if (same(i - 1)) return { index: i, finer, coarser: null, span: 0 };
+    let span = 1;
+    while (same(i + span)) span++;
+    return { index: i, finer, coarser: label, span };
+  });
+}
+
+export interface TimelinePoint {
+  date: string;
+  index: number;
+  grades: string[]; // the grades as logged that day at this index (the day's hardest)
+}
+
+// The grade-progress chart for one discipline: each day's hardest readable grade (oldest first), and for
+// each of those days the hardest of the 28 days ending on it (the same window as gradeProgress).
+export function gradeTimeline(
+  sessions: readonly GradedSession[],
+  d: Discipline,
+  today: string,
+): { days: TimelinePoint[]; best28: { date: string; index: number }[] } {
+  const byDay = new Map<string, TimelinePoint>();
+  for (const s of sessions) {
+    if (s.date > today) continue;
+    const g = parseGrade(s.max_grade, s.type);
+    if (!g || g.discipline !== d) continue;
+    const day = byDay.get(s.date);
+    if (!day || g.index > day.index) byDay.set(s.date, { date: s.date, index: g.index, grades: [s.max_grade!.trim()] });
+    else if (g.index === day.index && !day.grades.includes(s.max_grade!.trim())) day.grades.push(s.max_grade!.trim());
+  }
+  const days = [...byDay.values()].sort((a, b) => a.date.localeCompare(b.date));
+  const best28 = days.map((p) => {
+    const from = addDays(p.date, -27);
+    return { date: p.date, index: Math.max(...days.filter((q) => q.date >= from && q.date <= p.date).map((q) => q.index)) };
+  });
+  return { days, best28 };
+}
+
+// The system a discipline's grades were mostly logged in (the chart's default), the finer one on a tie.
+export function usualSystem(sessions: readonly GradedSession[], d: Discipline): GradeSystem {
+  const { finer, coarser } = LADDERS[d];
+  let n = 0;
+  for (const s of sessions) {
+    const g = parseGrade(s.max_grade, s.type);
+    if (g?.discipline === d) n += g.system === coarser ? 1 : -1;
+  }
+  return n > 0 ? coarser : finer;
+}
