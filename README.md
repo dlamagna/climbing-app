@@ -54,7 +54,7 @@ claude mcp add --transport http climbing https://climbing-app.<you>.workers.dev/
 Then ask, for example:
 - "Fill in my profile: goal is …, trip on …, I can train Mon/Wed/Sat." (or fill it in under More → Profile)
 - "Write my training plan up to the trip."
-- "How should I train today?" (Claude can save the answer as a coach note on the Today screen)
+- "How should I train today?" (Claude can save the answer as a coach note on the Coach tab)
 - "How did drinking and sleep affect my sessions this month?"
 
 ### Optional: file GitHub issues from Claude
@@ -81,17 +81,18 @@ straight away. Otherwise it:
 - adjusts the coming days of the plan around the days you picked to climb, or suggests days from your load
   when you haven't picked any
 - may leave a coach note
-- may ask you questions, shown as one-tap cards on Today
+- may ask you questions, shown as one-tap cards on the Coach tab
 - sorts feedback you sent from the app into GitHub issues
 
-You choose your climbing days with the weekly pop-up, which you can turn off in Settings, or with **Plan
-my climbing days** on Today.
+Everything coach-related lives on the **Coach** tab: questions, the latest note and review, coach
+activity, and notes you send. You choose your climbing days with the weekly pop-up (on Today; it can be
+turned off on the Coach tab) or with **Plan my climbing days** on the Coach tab.
 
 **Setup, the routine prompt, testing and troubleshooting: [docs/daily-coach-review.md](docs/daily-coach-review.md).**
 
 ### Optional: run the review from the app
 
-Settings → Coach activity can start the coach review (and an issue-worker routine, if you have one) on
+Coach → Coach activity can start the coach review (and an issue-worker routine, if you have one) on
 demand. For each routine, open it at [claude.ai/code/routines](https://claude.ai/code/routines), add an
 **API** trigger and generate a token. The token is shown once, next to the trigger's URL. Store both as
 worker secrets:
@@ -166,7 +167,7 @@ Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:loc
 | `worker/grades.ts` | Grade parsing and conversion (boulder Font <-> V, route French <-> YDS), the ladder index and `get_overview`'s `grade_progress`; also the Log page's grade hint, the grade table and the hardest-grade chart (`src/grades.ts` is the app side) |
 | `worker/export.ts` | `GET /api/export` helpers: table list, CSV, filename |
 | `migrations/` | Schema and default timer presets (D1 strips SQL comments; column docs for `get_schema` live in `worker/schema-docs.ts`) |
-| `src/pages/` | Today, Log, Timer, History, Plan, Injuries, Benchmarks, Settings, Feedback, Grades (table), GradeProgress (hardest grade over time) |
+| `src/pages/` | Today, Log, Timer, Coach, History, Plan, Injuries, Benchmarks, Settings, Feedback, Grades (table), GradeProgress (hardest grade over time) |
 | `src/timer.ts` | Hangboard phase sequencing, beeps, screen wake lock |
 
 Training load = minutes × effort (1-10), compared with your average week over the previous four.

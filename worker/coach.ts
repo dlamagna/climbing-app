@@ -1,7 +1,7 @@
 // Daily coach review (#52). A scheduled Claude run (a Claude Code routine on the climber's own account, no API
 // key) calls start_daily_review, which says what changed since the last run and whether a review is needed.
 // When it is, Claude adjusts the coming plan, may leave a coach note and may ask the climber a question; the
-// app shows open questions on the Today screen and the answers reach the next run. Every run ends with
+// app shows open questions on the Coach tab and the answers reach the next run. Every run ends with
 // record_coach_run, whose seen_through is where the next run starts looking.
 //
 // Validation and the "is a review needed" call are pure (coach.test.ts); the D1 queries are below them.
@@ -212,7 +212,7 @@ export async function setClimbingDays(db: D1Database, body: unknown, today: stri
       )
       .bind(
         `${CLIMB_DAYS_QUESTION} (${window[0]} to ${window[window.length - 1]})`,
-        "Set with Plan my climbing days on the Today screen",
+        "Set with Plan my climbing days on the Coach tab",
         JSON.stringify([...window, NO_CLIMBING]),
         addDays(today, CLIMB_DAYS_AHEAD - 1),
         `${CLIMB_DAYS_TOPIC}:${today}`,
@@ -231,7 +231,7 @@ export async function setClimbingDays(db: D1Database, body: unknown, today: stri
 }
 
 // The climbing days picked most recently (weekly question or the button) that still cover today, for the
-// Today screen.
+// Coach tab.
 export async function currentClimbingDays(db: D1Database, today: string) {
   return db
     .prepare(
@@ -377,7 +377,7 @@ export interface FeedbackRow {
   created_at: string;
 }
 
-// Notes the climber sends the coach from the Today screen (#65).
+// Notes the climber sends the coach from the Coach tab (#65, #80).
 const MAX_CLIMBER_NOTE = 2000;
 export interface ClimberNote {
   id: number;
@@ -498,6 +498,7 @@ the climber anything in chat, work only through these tools.
    rewrite today too, so it matches the pick ("picked_but_not_planned": a climbing session that suits
    today's readiness; "planned_but_not_picked": rest or light non-climbing work instead). Put planned
    tests in expected_benchmarks.
+   Write details as short labelled lines, one per block ('Warm-up 15 min: ...', 'Main: ...'), not a paragraph.
    Fixed sessions are the days in climbing_days.days and plan entries the climber added by hand (source
    'app') or set a status on. Plan around them:
    - Picked days: put the climbing sessions on them; days between them get rest, mobility or light
@@ -512,7 +513,8 @@ the climber anything in chat, work only through these tools.
      the coach note that they can change the days with Plan my climbing days.
 
 5. Coach note: if something is worth saying (why the plan changed, tomorrow's focus, a load or injury
-   warning), add one short note with add_coach_note dated tomorrow. Skip it when there's nothing new.
+   warning), add one short note with add_coach_note dated tomorrow: 2-4 short lines, one point each, separated
+   by newlines (the app shows each line as a bullet). Skip it when there's nothing new.
 
 6. Questions: ask with ask_question only when the answer would change the plan and the data can't tell you
    (intentions for the week, upcoming trips or time off, a constraint, what a vague session note meant). At
@@ -636,7 +638,7 @@ const decodeRun = (row: (Omit<CoachRunRow, "changes"> & { changes: string | null
 export const lastRun = async (db: D1Database) =>
   decodeRun(await db.prepare("SELECT * FROM coach_runs ORDER BY id DESC LIMIT 1").first());
 
-// The last run that changed something, for the Today screen (a "nothing new" run would hide it otherwise).
+// The last run that changed something, for the Coach tab (a "nothing new" run would hide it otherwise).
 export const lastUpdate = async (db: D1Database) =>
   decodeRun(await db.prepare("SELECT * FROM coach_runs WHERE outcome = 'updated' ORDER BY id DESC LIMIT 1").first());
 
@@ -651,7 +653,7 @@ export function nextRunExpected(last: Pick<CoachRunRow, "created_at"> | null): s
   return Number.isNaN(t) ? null : nowStamp(new Date(t + RUN_INTERVAL_HOURS * 3_600_000));
 }
 
-// Past runs, newest first, for the Settings screen's coach activity (#64).
+// Past runs, newest first, for the Coach tab's coach activity (#64, #80).
 export async function listRuns(db: D1Database, limit = 30): Promise<CoachRunRow[]> {
   const n = Math.min(Math.max(1, Math.trunc(limit) || 30), MAX_RUN_HISTORY);
   const { results } = await db.prepare("SELECT * FROM coach_runs ORDER BY id DESC LIMIT ?").bind(n).all();

@@ -388,7 +388,7 @@ api.post("/coach/notes", async (c) => c.json({ id: await addClimberNote(c.env.DB
 // Coach activity for Settings (#64): last run, when the next one is expected, and past runs.
 api.get("/coach/runs", async (c) => c.json(await coachActivity(c.env.DB, Number(c.req.query("limit") ?? 30))));
 
-// Start the coach review or the issue worker now, from Settings → Coach activity (needs the routine's
+// Start the coach review or the issue worker now, from Coach → Coach activity (needs the routine's
 // API trigger secrets; see worker/routines.ts).
 api.get("/coach/routines", (c) => c.json(routinesAvailable(c.env)));
 api.post("/coach/routines/:name/run", async (c) => {

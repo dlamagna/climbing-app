@@ -14,7 +14,8 @@ import {
 } from "../components/injury";
 import { testsLabel } from "../benchmarkInputs";
 import { ProfileInjuryBanner } from "../components/profileInjury";
-import { ClimbingDaysPlanner, CoachQuestions, CoachUpdate, NoteToCoach, WeeklyPopup, recentUpdate } from "../components/coach";
+import { WeeklyPopup } from "../components/coach";
+import { StepList } from "../components/StepList";
 import { PlanFlags, StatusChip, WeekSoFar } from "../components/planStatus";
 import { WeekSummary } from "../components/WeekSummary";
 import { Card, Chips, DatePicker, Field, Stepper, range } from "../components/ui";
@@ -33,8 +34,7 @@ export default function Today() {
 
   const todaysPlan = data.plan.filter((p) => p.date === today);
   const upcoming = data.plan.filter((p) => p.date > today);
-  const note = data.coach_notes[0];
-  const update = recentUpdate(data.coach_update, today);
+  const waiting = data.coach_questions?.length ?? 0;
   const answered = (id: number) => setData({ ...data, coach_questions: (data.coach_questions ?? []).filter((q) => q.id !== id) });
 
   return (
@@ -77,13 +77,11 @@ export default function Today() {
       <ReadinessBanner readiness={data.readiness} />
 
       <WeeklyPopup questions={data.coach_questions ?? []} today={today} onAnswered={answered} />
-      <CoachQuestions questions={data.coach_questions ?? []} onAnswered={answered} />
-
-      {(note || update) && (
-        <Card title={note ? `Coach · ${dayLabel(note.date, today)}` : "Coach"}>
-          {note && <p className="prewrap">{note.text}</p>}
-          {update && <CoachUpdate run={update} today={today} />}
-        </Card>
+      {waiting > 0 && (
+        <a className="card tone-accent coach-link" href="#/coach">
+          <strong>{waiting === 1 ? "The coach has a question" : `The coach has ${waiting} questions`}</strong>
+          <span className="small">Answer on the Coach tab →</span>
+        </a>
       )}
 
       <Card title="Today's plan">
@@ -104,7 +102,6 @@ export default function Today() {
           </ul>
         )}
         <WeekSoFar entries={data.plan} today={today} />
-        <ClimbingDaysPlanner today={today} current={data.climbing_days ?? null} onSaved={reload} />
       </Card>
 
       <div className="actions">
@@ -115,8 +112,6 @@ export default function Today() {
           Hangboard timer
         </a>
       </div>
-
-      <NoteToCoach />
 
       {data.sessions.length > 0 && (
         <Card title="Done today">
@@ -163,7 +158,7 @@ export function PlanItem({ entry, today, onChanged }: { entry: PlanEntry; today?
         {entry.intensity && <span className={`tag ${entry.intensity}`}>{entry.intensity}</span>}
         {today && <StatusChip entry={entry} today={today} onChanged={onChanged} />}
       </div>
-      {entry.details && <p className="prewrap muted">{entry.details}</p>}
+      <StepList text={entry.details} className="plan-steps" />
       {today && <PlanFlags flags={entry.flags} today={today} />}
     </div>
   );

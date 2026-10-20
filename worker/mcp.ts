@@ -137,7 +137,7 @@ again against the new entries, so already-logged days keep showing what happened
 coach entries without a status picked by hand.
 
 Daily coach review: a scheduled run (the daily_review prompt) calls start_daily_review and follows its
-instructions. Questions for the climber go through ask_question (shown on the app's Today screen, answered with
+instructions. Questions for the climber go through ask_question (shown on the app's Coach tab, answered with
 a tap); get_overview's coach.answered_questions are answers not used yet: use them (lasting facts to the
 profile), then close_questions. coach.last_run is the last review. coach.climbing_days is the climber's latest
 pick of climbing days (from the weekly question or the app's "Plan my climbing days"): plan climbing on those
@@ -283,7 +283,11 @@ const TOOLS: Tool[] = [
               title: { type: "string", description: "Short, e.g. 'Limit bouldering' or 'Rest'" },
               type: { type: "string", enum: [...SESSION_TYPES, "rest"] },
               intensity: { type: "string", enum: ["rest", "easy", "moderate", "hard"] },
-              details: { type: "string", description: "The actual workout: warm-up, sets, grades, times" },
+              details: {
+                type: "string",
+                description:
+                  "The actual workout as short lines, one per block, separated by newlines (the app shows each line as a bullet). Start each with a short label and a colon, e.g. 'Warm-up 15 min: easy routes'. Keep each line under ~80 characters; no prose or repeated advice.",
+              },
               duration_min: { type: "integer", minimum: 1, description: "Planned length; a much shorter session counts as partial" },
               expected_benchmarks: {
                 type: "array",
@@ -330,7 +334,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "add_coach_note",
-    description: "Save a recommendation so it shows on the app's Today screen. Keep it short and scannable on a phone.",
+    description: "Save a recommendation so it shows on the app's Coach tab. Write 2-4 short lines, one point each, separated by newlines: the app shows each line as a bullet.",
     inputSchema: {
       type: "object",
       properties: { text: { type: "string" }, date: { ...dateSchema, description: "Defaults to today" } },

@@ -2,6 +2,7 @@ import { type ComponentType, useEffect, useState } from "react";
 import { type ToastMessage, checkToken, flushOutbox, get, getToken, pendingCount, send, setToken, toast } from "./api";
 import Benchmarks from "./pages/Benchmarks";
 import CheckinEdit from "./pages/CheckinEdit";
+import Coach from "./pages/Coach";
 import Feedback from "./pages/Feedback";
 import GradeProgress from "./pages/GradeProgress";
 import Grades from "./pages/Grades";
@@ -19,6 +20,7 @@ const ROUTES: Record<string, ComponentType> = {
   log: Log,
   checkin: CheckinEdit,
   timer: Timer,
+  coach: Coach,
   history: History,
   more: More,
   plan: Plan,
@@ -34,6 +36,7 @@ const TABS = [
   { route: "today", label: "Today", icon: "◉" },
   { route: "log", label: "Log", icon: "+" },
   { route: "timer", label: "Timer", icon: "◷" },
+  { route: "coach", label: "Coach", icon: "✦" },
   { route: "history", label: "History", icon: "▤" },
   { route: "more", label: "More", icon: "≡" },
 ];
