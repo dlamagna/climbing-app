@@ -132,3 +132,74 @@ export async function createIssue(env: Env, title: string, body: string, opts: I
   }
   return result;
 }
+
+// --- Feedback issue status (#70) ----------------------------------------------------------------------
+
+// Where a feedback item's issue stands. "merged" is a fix whose deploy status is unknown (no
+// DEPLOYED_COMMIT_EPOCH, e.g. local dev); "deploying" is merged but newer than the running build.
+export type IssueStatus = "open" | "merged" | "deploying" | "live" | "closed";
+
+export interface IssueState {
+  number: number;
+  state: string; // "open" | "closed"
+  state_reason: string | null; // "completed" | "not_planned" | "duplicate" | "reopened" | null
+  closed_at: string | null;
+}
+
+// An issue closes a moment after its PR's merge commit is made, so allow a little slack.
+const CLOSE_SLACK_SECONDS = 120;
+
+// CI passes the deployed build's commit time (unix seconds) as a var on every deploy.
+export function deployedEpoch(env: Env): number | null {
+  const n = Number(env.DEPLOYED_COMMIT_EPOCH);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+export function issueStatus(i: IssueState, deployed: number | null): IssueStatus {
+  if (i.state !== "closed") return "open";
+  if (i.state_reason === "not_planned" || i.state_reason === "duplicate") return "closed";
+  if (deployed === null || !i.closed_at) return "merged";
+  return Date.parse(i.closed_at) / 1000 <= deployed + CLOSE_SLACK_SECONDS ? "live" : "deploying";
+}
+
+// The states of the given issues, newest first, a page of 100 at a time (at most 3 pages).
+export async function issueStates(env: Env, numbers: number[]): Promise<Map<number, IssueState>> {
+  const want = new Set(numbers);
+  const found = new Map<number, IssueState>();
+  for (let page = 1; page <= 3 && found.size < want.size; page++) {
+    const issues = await github<(IssueState & { pull_request?: unknown })[]>(
+      env,
+      `/issues?state=all&per_page=100&page=${page}`,
+      { signal: AbortSignal.timeout(4000) },
+    );
+    for (const i of issues) {
+      if (!i.pull_request && want.has(i.number)) {
+        found.set(i.number, { number: i.number, state: i.state, state_reason: i.state_reason ?? null, closed_at: i.closed_at ?? null });
+      }
+    }
+    if (issues.length < 100) break;
+  }
+  return found;
+}
+
+// Feedback rows with their issue's status added. Leaves it null when GitHub is off or can't be reached,
+// so the feedback page never fails because of it.
+export async function withIssueStatus<T extends { issue_number: number | null }>(
+  env: Env,
+  rows: T[],
+): Promise<(T & { issue_status: IssueStatus | null })[]> {
+  const numbers = [...new Set(rows.map((r) => r.issue_number).filter((n): n is number => n !== null))];
+  let states = new Map<number, IssueState>();
+  if (numbers.length > 0 && githubEnabled(env)) {
+    try {
+      states = await issueStates(env, numbers);
+    } catch {
+      // status is optional
+    }
+  }
+  const deployed = deployedEpoch(env);
+  return rows.map((r) => {
+    const s = r.issue_number === null ? undefined : states.get(r.issue_number);
+    return { ...r, issue_status: s ? issueStatus(s, deployed) : null };
+  });
+}

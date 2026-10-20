@@ -31,6 +31,7 @@ export interface Env {
   GITHUB_TOKEN?: string; // optional, enables the issue tools (see worker/github.ts)
   GITHUB_REPO?: string; // "owner/repo"
   GITHUB_ROADMAP_ISSUE?: string; // optional: number of the roadmap issue new issues are listed in
+  DEPLOYED_COMMIT_EPOCH?: string; // set by CI on deploy: the deployed commit's time in unix seconds (#70)
 }
 
 type Row = Record<string, unknown>;
