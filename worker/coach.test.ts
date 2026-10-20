@@ -9,6 +9,8 @@ import {
   type ReviewChanges,
   addClimberNote,
   addFeedback,
+  deleteFeedback,
+  editFeedback,
   answerQuestion,
   askQuestion,
   changesSince,
@@ -575,6 +577,19 @@ describe("app feedback", () => {
     await addFeedback(db, { text: "Second" }, null);
     expect((await listFeedback(db)).map((f) => [f.text, f.status])).toEqual([["Second", "new"], ["Bigger buttons please", "new"]]);
     await expect(addFeedback(db, { text: "  " }, null)).rejects.toThrow(/feedback is required/);
+  });
+
+  it("edits feedback until the coach has handled it, and deletes it", async () => {
+    const id = await addFeedback(db, { text: "Dark mode" }, null);
+    await editFeedback(db, id, { text: " Dark mode please " });
+    expect((await listFeedback(db))[0].text).toBe("Dark mode please");
+    await expect(editFeedback(db, id, { text: " " })).rejects.toThrow(/feedback is required/);
+    await resolveFeedback(db, id, parseResolution({ status: "declined", reply: "Not actionable" }));
+    await expect(editFeedback(db, id, { text: "Changed" })).rejects.toThrow(/waiting for review/);
+    await expect(editFeedback(db, 999, { text: "x" })).rejects.toThrow(/not found/);
+    await deleteFeedback(db, id);
+    expect(await listFeedback(db)).toEqual([]);
+    await expect(deleteFeedback(db, id)).rejects.toThrow(/not found/);
   });
 
   it("records what the coach did with it", async () => {

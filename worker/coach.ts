@@ -698,6 +698,21 @@ export async function addFeedback(db: D1Database, body: unknown, clientId: strin
   return (await db.prepare("SELECT id FROM app_feedback WHERE client_id = ?").bind(clientId).first<{ id: number }>())!.id;
 }
 
+// Edit the text of feedback the coach hasn't triaged yet; once it is filed or declined the text is the record.
+export async function editFeedback(db: D1Database, id: unknown, body: unknown) {
+  if (!Number.isInteger(id)) throw new BadRequest("id is required (integer)");
+  const row = await db.prepare("UPDATE app_feedback SET text = ? WHERE id = ? AND status = 'new' RETURNING id").bind(parseFeedback(body), id).first();
+  if (row) return;
+  if (await db.prepare("SELECT id FROM app_feedback WHERE id = ?").bind(id).first()) throw new BadRequest("Only feedback waiting for review can be edited");
+  throw new NotFound(`Feedback ${id} not found`);
+}
+
+export async function deleteFeedback(db: D1Database, id: unknown) {
+  if (!Number.isInteger(id)) throw new BadRequest("id is required (integer)");
+  const row = await db.prepare("DELETE FROM app_feedback WHERE id = ? RETURNING id").bind(id).first();
+  if (!row) throw new NotFound(`Feedback ${id} not found`);
+}
+
 export async function resolveFeedback(db: D1Database, id: unknown, r: FeedbackResolution) {
   if (!Number.isInteger(id)) throw new BadRequest("id is required (integer)");
   const row = await db
