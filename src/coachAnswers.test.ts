@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NOT_THIS_WEEK, NO_CLIMBING, climbingDaysBody, isWeekly, multiAnswer, plannerDays, togglePick } from "./coachAnswers";
+import { MAX_COACH_NOTE, NOT_THIS_WEEK, NO_CLIMBING, climbingDaysBody, coachNoteBody, isWeekly, multiAnswer, plannerDays, togglePick } from "./coachAnswers";
 
 const options = ["Mon 4", "Tue 5", "Wed 6", NOT_THIS_WEEK];
 
@@ -45,5 +45,13 @@ describe("isWeekly", () => {
     expect(isWeekly({ topic: "week_days:2026-05-04" })).toBe(true);
     expect(isWeekly({ topic: null })).toBe(false);
     expect(isWeekly({})).toBe(false);
+  });
+});
+
+describe("coachNoteBody", () => {
+  it("trims the note and sends nothing when it is empty or too long", () => {
+    expect(coachNoteBody("  Busy weekend, short sessions only  ")).toEqual({ text: "Busy weekend, short sessions only" });
+    expect(coachNoteBody("   ")).toBeNull();
+    expect(coachNoteBody("x".repeat(MAX_COACH_NOTE + 1))).toBeNull();
   });
 });

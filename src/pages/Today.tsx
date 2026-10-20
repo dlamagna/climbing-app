@@ -14,7 +14,7 @@ import {
 } from "../components/injury";
 import { testsLabel } from "../benchmarkInputs";
 import { ProfileInjuryBanner } from "../components/profileInjury";
-import { ClimbingDaysPlanner, CoachQuestions, CoachUpdate, WeeklyPopup, recentUpdate } from "../components/coach";
+import { ClimbingDaysPlanner, CoachQuestions, CoachUpdate, NoteToCoach, WeeklyPopup, recentUpdate } from "../components/coach";
 import { PlanFlags, StatusChip, WeekSoFar } from "../components/planStatus";
 import { WeekSummary } from "../components/WeekSummary";
 import { Card, Chips, DatePicker, Field, Stepper, range } from "../components/ui";
@@ -115,6 +115,8 @@ export default function Today() {
           Hangboard timer
         </a>
       </div>
+
+      <NoteToCoach />
 
       {data.sessions.length > 0 && (
         <Card title="Done today">
