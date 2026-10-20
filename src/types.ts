@@ -142,12 +142,22 @@ export interface CoachRun {
   created_at: string; // UTC timestamp
 }
 
+// Settings' coach activity (GET /coach/runs, #64). The next run is an estimate: one interval after the last.
+export interface CoachActivity {
+  last_run: CoachRun | null;
+  next_run_expected: string | null; // UTC timestamp
+  interval_hours: number;
+  runs: CoachRun[]; // newest first
+}
+
 export interface AppFeedback {
   id: number;
   text: string;
   status: "new" | "filed" | "duplicate" | "declined";
   issue_number: number | null;
   issue_url: string | null;
+  // Where the linked issue stands (#70); null when there's no issue or GitHub couldn't be reached.
+  issue_status: "open" | "merged" | "deploying" | "live" | "closed" | null;
   reply: string | null;
   created_at: string; // UTC timestamp
 }
@@ -220,3 +230,9 @@ export const typeLabel = (t: string | null) => SESSION_TYPES.find((s) => s.value
 
 // Groups for the History calendar and mix (rope / boulder / fingers / other); defined once in worker/typeGroups.ts.
 export { TYPE_GROUPS, type GroupKey, groupOf, groupInfo } from "../worker/typeGroups";
+
+// Which coach routines can be started from the app (#73).
+export interface CoachRoutines {
+  review: boolean;
+  worker: boolean;
+}

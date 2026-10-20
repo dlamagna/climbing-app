@@ -2,9 +2,18 @@
 // whether to file it as a GitHub issue (written without personal details, since the repo is public).
 import { useState } from "react";
 import { isQueued, savedToast, send, useApi } from "../api";
-import { Card, Field, PageHeader } from "../components/ui";
+import { Card, Field, OverflowMenu, PageHeader } from "../components/ui";
 import { dayLabel, localDateOf, localToday } from "../dates";
 import type { AppFeedback } from "../types";
+
+// The linked issue's progress (#70): "live" means the fix is in the running app.
+const ISSUE_STATUS: Record<NonNullable<AppFeedback["issue_status"]>, { label: string; cls: string }> = {
+  open: { label: "open", cls: "" },
+  merged: { label: "merged", cls: "partial" },
+  deploying: { label: "merged, deploying", cls: "partial" },
+  live: { label: "live", cls: "done" },
+  closed: { label: "closed", cls: "skipped" },
+};
 
 const STATUS: Record<AppFeedback["status"], string> = {
   new: "waiting for review",
@@ -18,6 +27,31 @@ export default function Feedback() {
   const { data, error, reload } = useApi<AppFeedback[]>("/feedback");
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [editing, setEditing] = useState<{ id: number; text: string } | null>(null);
+
+  async function saveEdit() {
+    if (!editing) return;
+    setBusy(true);
+    try {
+      savedToast(await send("PUT", `/feedback/${editing.id}`, { text: editing.text.trim() }), "Feedback updated");
+      setEditing(null);
+      reload();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(id: number) {
+    if (!confirm("Delete this feedback? This can't be undone.")) return;
+    try {
+      savedToast(await send("DELETE", `/feedback/${id}`), "Deleted");
+      reload();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
 
   async function submit() {
     setBusy(true);
@@ -56,7 +90,30 @@ export default function Feedback() {
           <ul className="feedback-list">
             {data.map((f) => (
               <li key={f.id}>
-                <p className="prewrap">{f.text}</p>
+                {editing?.id === f.id ? (
+                  <div className="form">
+                    <textarea rows={4} aria-label="Feedback" value={editing.text} onChange={(e) => setEditing({ id: f.id, text: e.target.value })} />
+                    <div className="row">
+                      <button className="btn primary" disabled={busy || !editing.text.trim()} onClick={saveEdit}>
+                        Save
+                      </button>
+                      <button className="btn" onClick={() => setEditing(null)}>
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="entry">
+                    <p className="prewrap">{f.text}</p>
+                    <OverflowMenu
+                      label="Feedback options"
+                      items={[
+                        ...(f.status === "new" ? [{ label: "Edit", onSelect: () => setEditing({ id: f.id, text: f.text }) }] : []),
+                        { label: "Delete", danger: true, onSelect: () => remove(f.id) },
+                      ]}
+                    />
+                  </div>
+                )}
                 <p className="muted small">
                   {dayLabel(localDateOf(f.created_at), today)} ·{" "}
                   <span className={`tag status ${f.status === "new" ? "" : f.status === "declined" ? "skipped" : "done"}`}>{STATUS[f.status]}</span>
@@ -70,6 +127,12 @@ export default function Feedback() {
                         </a>
                       ) : (
                         `#${f.issue_number}`
+                      )}
+                      {f.issue_status && (
+                        <>
+                          {" "}
+                          <span className={`tag status ${ISSUE_STATUS[f.issue_status].cls}`}>{ISSUE_STATUS[f.issue_status].label}</span>
+                        </>
                       )}
                     </>
                   )}

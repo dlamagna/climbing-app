@@ -811,6 +811,15 @@ button {
   flex-direction: column;
   gap: 6px;
 }
+.cal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.cal-row a {
+  flex: 1;
+}
 .cal-list a {
   display: flex;
   align-items: center;

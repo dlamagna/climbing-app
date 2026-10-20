@@ -70,6 +70,10 @@ export async function fetchFile(path: string): Promise<File> {
 
 export const checkToken = (token: string) => request("GET", "/profile", undefined, token);
 
+// A write that must not be queued and replayed later when offline (starting a coach run): it either
+// happens now or fails with the network error.
+export const sendNow = <T = unknown>(method: string, path: string, body?: unknown) => request<T>(method, path, body);
+
 // Reads fall back to the last good response when offline (fetch throws TypeError on network failure).
 export async function get<T>(path: string): Promise<T> {
   try {

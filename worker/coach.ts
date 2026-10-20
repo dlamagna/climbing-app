@@ -377,6 +377,17 @@ export interface FeedbackRow {
   created_at: string;
 }
 
+// Notes the climber sends the coach from the Today screen (#65).
+const MAX_CLIMBER_NOTE = 2000;
+export interface ClimberNote {
+  id: number;
+  text: string;
+  created_at: string;
+}
+
+export const parseClimberNote = (body: unknown): string =>
+  text(((body ?? {}) as Record<string, unknown>).text, "note", MAX_CLIMBER_NOTE, true)!;
+
 export const parseFeedback = (body: unknown): string =>
   text(((body ?? {}) as Record<string, unknown>).text, "feedback", MAX_FEEDBACK, true)!;
 
@@ -417,6 +428,7 @@ export interface ReviewChanges {
   answered_questions: Question[];
   skipped_questions: Question[];
   new_feedback: Pick<FeedbackRow, "id" | "text" | "created_at">[];
+  notes_from_climber: ClimberNote[];
   checkins: number;
   benchmarks: number;
 }
@@ -442,6 +454,9 @@ export function reviewDecision(
   if (c.profile_keys.length) reasons.push(`profile changed (${c.profile_keys.join(", ")})`);
   if (c.plan_entries_added_by_hand.length) reasons.push("plan entries added by hand");
   if (c.new_feedback.length) reasons.push(`${c.new_feedback.length} app feedback item${c.new_feedback.length === 1 ? "" : "s"} to triage`);
+  if (c.notes_from_climber.length) {
+    reasons.push(`${c.notes_from_climber.length} note${c.notes_from_climber.length === 1 ? "" : "s"} from the climber`);
+  }
   if (c.answered_questions.length) reasons.push(`${c.answered_questions.length} question${c.answered_questions.length === 1 ? "" : "s"} answered`);
   if (plannedDaysAhead < MIN_PLANNED_DAYS_AHEAD) reasons.push(`only ${plannedDaysAhead} of the next 7 days planned`);
   if (today) reasons.push(today.message.charAt(0).toLowerCase() + today.message.slice(1));
@@ -471,6 +486,10 @@ the climber anything in chat, work only through these tools.
    within the ${CLIMB_DAYS_AHEAD} days from that date, "${NO_CLIMBING}" = none). You don't need to decode these
    answers: climbing_days (in this result and in get_overview's coach) is the latest pick that still applies,
    already as dates, and stays there after you close the question.
+
+   Notes from the climber (changes.notes_from_climber): extra context they sent you from the app. Use it like
+   an answer: lasting facts to the profile, short-lived ones into the plan. Mention it in the summary when it
+   changed something.
 
 4. Plan: keep the next 7 days filled, starting tomorrow, and further when climbing_days.to reaches past them
    (up to that day). Change only what the new data calls for; if the
@@ -621,6 +640,30 @@ export const lastRun = async (db: D1Database) =>
 export const lastUpdate = async (db: D1Database) =>
   decodeRun(await db.prepare("SELECT * FROM coach_runs WHERE outcome = 'updated' ORDER BY id DESC LIMIT 1").first());
 
+// The review runs once a day (a scheduled routine outside the app, so its exact schedule isn't stored here).
+export const RUN_INTERVAL_HOURS = 24;
+export const MAX_RUN_HISTORY = 100;
+
+// When the next run is expected: one interval after the last one (null before the first run).
+export function nextRunExpected(last: Pick<CoachRunRow, "created_at"> | null): string | null {
+  if (!last) return null;
+  const t = Date.parse(last.created_at);
+  return Number.isNaN(t) ? null : nowStamp(new Date(t + RUN_INTERVAL_HOURS * 3_600_000));
+}
+
+// Past runs, newest first, for the Settings screen's coach activity (#64).
+export async function listRuns(db: D1Database, limit = 30): Promise<CoachRunRow[]> {
+  const n = Math.min(Math.max(1, Math.trunc(limit) || 30), MAX_RUN_HISTORY);
+  const { results } = await db.prepare("SELECT * FROM coach_runs ORDER BY id DESC LIMIT ?").bind(n).all();
+  return (results as Parameters<typeof decodeRun>[0][]).map((r) => decodeRun(r)!);
+}
+
+export async function coachActivity(db: D1Database, limit?: number) {
+  const runs = await listRuns(db, limit);
+  const last = runs[0] ?? null;
+  return { last_run: last, next_run_expected: nextRunExpected(last), interval_hours: RUN_INTERVAL_HOURS, runs };
+}
+
 export async function recordRun(db: D1Database, run: CoachRun): Promise<number> {
   const row = await db
     .prepare("INSERT INTO coach_runs (outcome, summary, changes, seen_through) VALUES (?, ?, ?, ?) RETURNING id")
@@ -642,7 +685,7 @@ export async function changesSince(
 ): Promise<ReviewChanges> {
   const s = last?.seen_through ?? nowStamp(new Date(Date.now() - FIRST_RUN_LOOKBACK_DAYS * 86_400_000));
   const p = last?.created_at ?? s;
-  const [sessions, newInjuries, updates, profile, planByHand, answered, skipped, feedback, checkins, benchmarks] = await Promise.all([
+  const [sessions, newInjuries, updates, profile, planByHand, answered, skipped, feedback, notes, checkins, benchmarks] = await Promise.all([
     all<ChangedSession & { created_at: string }>(
       db,
       `SELECT id, date, type, duration_min, rpe, created_at FROM sessions
@@ -662,6 +705,7 @@ export async function changesSince(
     all<QuestionRow>(db, "SELECT * FROM coach_questions WHERE closed_at IS NULL AND answered_at IS NOT NULL ORDER BY id"),
     all<QuestionRow>(db, "SELECT * FROM coach_questions WHERE closed_at IS NULL AND skipped_at IS NOT NULL ORDER BY id"),
     all<ReviewChanges["new_feedback"][number]>(db, "SELECT id, text, created_at FROM app_feedback WHERE status = 'new' ORDER BY id"),
+    all<ClimberNote>(db, "SELECT id, text, created_at FROM climber_notes WHERE created_at >= ? ORDER BY id", s),
     db.prepare("SELECT COUNT(*) AS n FROM checkins WHERE updated_at >= ?").bind(s).first<{ n: number }>(),
     db.prepare("SELECT COUNT(*) AS n FROM benchmarks WHERE created_at >= ?").bind(s).first<{ n: number }>(),
   ]);
@@ -674,6 +718,7 @@ export async function changesSince(
     answered_questions: answered.map((r) => decodeQuestion(r, today)),
     skipped_questions: skipped.map((r) => decodeQuestion(r, today)),
     new_feedback: feedback,
+    notes_from_climber: notes,
     checkins: checkins?.n ?? 0,
     benchmarks: benchmarks?.n ?? 0,
   };
@@ -686,6 +731,21 @@ export const listFeedback = (db: D1Database) =>
     "SELECT id, text, status, issue_number, issue_url, reply, handled_at, created_at FROM app_feedback ORDER BY id DESC LIMIT 50",
   );
 
+// The climber's notes to the coach, newest first, for the app.
+export const listClimberNotes = (db: D1Database, limit = 20) =>
+  all<ClimberNote>(db, "SELECT id, text, created_at FROM climber_notes ORDER BY id DESC LIMIT ?", limit);
+
+// clientId makes a replayed offline send return the first row instead of adding a copy.
+export async function addClimberNote(db: D1Database, body: unknown, clientId: string | null): Promise<number> {
+  const t = parseClimberNote(body);
+  const row = await db
+    .prepare("INSERT INTO climber_notes (text, client_id) VALUES (?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id")
+    .bind(t, clientId)
+    .first<{ id: number }>();
+  if (row) return row.id;
+  return (await db.prepare("SELECT id FROM climber_notes WHERE client_id = ?").bind(clientId).first<{ id: number }>())!.id;
+}
+
 // clientId makes a replayed offline submit return the first row instead of adding a copy.
 export async function addFeedback(db: D1Database, body: unknown, clientId: string | null): Promise<number> {
   const t = parseFeedback(body);
@@ -695,6 +755,21 @@ export async function addFeedback(db: D1Database, body: unknown, clientId: strin
     .first<{ id: number }>();
   if (row) return row.id;
   return (await db.prepare("SELECT id FROM app_feedback WHERE client_id = ?").bind(clientId).first<{ id: number }>())!.id;
+}
+
+// Edit the text of feedback the coach hasn't triaged yet; once it is filed or declined the text is the record.
+export async function editFeedback(db: D1Database, id: unknown, body: unknown) {
+  if (!Number.isInteger(id)) throw new BadRequest("id is required (integer)");
+  const row = await db.prepare("UPDATE app_feedback SET text = ? WHERE id = ? AND status = 'new' RETURNING id").bind(parseFeedback(body), id).first();
+  if (row) return;
+  if (await db.prepare("SELECT id FROM app_feedback WHERE id = ?").bind(id).first()) throw new BadRequest("Only feedback waiting for review can be edited");
+  throw new NotFound(`Feedback ${id} not found`);
+}
+
+export async function deleteFeedback(db: D1Database, id: unknown) {
+  if (!Number.isInteger(id)) throw new BadRequest("id is required (integer)");
+  const row = await db.prepare("DELETE FROM app_feedback WHERE id = ? RETURNING id").bind(id).first();
+  if (!row) throw new NotFound(`Feedback ${id} not found`);
 }
 
 export async function resolveFeedback(db: D1Database, id: unknown, r: FeedbackResolution) {

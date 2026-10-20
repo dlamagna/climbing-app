@@ -7,7 +7,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   MAX_OPEN_QUESTIONS,
   type ReviewChanges,
+  addClimberNote,
   addFeedback,
+  deleteFeedback,
+  editFeedback,
   answerQuestion,
   askQuestion,
   changesSince,
@@ -16,11 +19,15 @@ import {
   climbingDaysAnswer,
   climbingDaysContext,
   closeQuestions,
+  coachActivity,
   currentClimbingDays,
   ensureWeeklyQuestion,
   lastRun,
   lastUpdate,
+  listClimberNotes,
   listFeedback,
+  listRuns,
+  nextRunExpected,
   nowStamp,
   openQuestions,
   parseAnswer,
@@ -281,6 +288,7 @@ describe("reviewDecision", () => {
     answered_questions: [],
     skipped_questions: [],
     new_feedback: [],
+    notes_from_climber: [],
     checkins: 2,
     benchmarks: 1,
   };
@@ -304,12 +312,14 @@ describe("reviewDecision", () => {
       profile_keys: ["goal"],
       answered_questions: [{} as never],
       new_feedback: [{ id: 1, text: "x", created_at: "" }],
+      notes_from_climber: [{ id: 1, text: "y", created_at: "" }, { id: 2, text: "z", created_at: "" }],
     };
     expect(reviewDecision(last, c, 2).reasons).toEqual([
       "1 session logged",
       "1 session edited",
       "profile changed (goal)",
       "1 app feedback item to triage",
+      "2 notes from the climber",
       "1 question answered",
       "only 2 of the next 7 days planned",
     ]);
@@ -509,6 +519,29 @@ describe("runs and what changed", () => {
     expect(await lastUpdate(db)).toMatchObject({ summary: "Moved a session", changes: ["moved"] });
   });
 
+  it("lists past runs newest first and expects the next one a day after the last (#64)", async () => {
+    expect(await coachActivity(db)).toEqual({ last_run: null, next_run_expected: null, interval_hours: 24, runs: [] });
+    await recordRun(db, { outcome: "updated", summary: "Added a rest day", changes: ["rest day", "lighter week"], seen_through: T0 });
+    await recordRun(db, { outcome: "no_change", summary: null, changes: [], seen_through: "2026-05-10T21:00:00Z" });
+    exec("UPDATE coach_runs SET created_at = '2026-05-09T21:01:00Z' WHERE id = 1");
+    exec("UPDATE coach_runs SET created_at = '2026-05-10T21:01:00Z' WHERE id = 2");
+    const a = await coachActivity(db);
+    expect(a.runs.map((r) => [r.id, r.outcome, r.changes])).toEqual([
+      [2, "no_change", []],
+      [1, "updated", ["rest day", "lighter week"]],
+    ]);
+    expect(a.last_run!.id).toBe(2);
+    expect(a.next_run_expected).toBe("2026-05-11T21:01:00Z");
+    expect((await listRuns(db, 1)).map((r) => r.id)).toEqual([2]);
+    expect((await listRuns(db, Number.NaN)).length).toBe(2);
+  });
+
+  it("has no next-run estimate without a valid last run", () => {
+    expect(nextRunExpected(null)).toBeNull();
+    expect(nextRunExpected({ created_at: "not a date" })).toBeNull();
+    expect(nextRunExpected({ created_at: "2026-12-31T23:30:00Z" })).toBe("2027-01-01T23:30:00Z");
+  });
+
   it("finds sessions logged or edited since the last run, and the rest of the changes", async () => {
     const last = { seen_through: T0, created_at: "2026-05-09T21:02:00Z" };
     exec("INSERT INTO sessions (date, type, duration_min, rpe, created_at) VALUES ('2026-05-08', 'boulder', 60, 6, '2026-05-08T19:00:00Z')"); // old
@@ -572,6 +605,25 @@ describe("set_plan keep_app_entries", () => {
   });
 });
 
+describe("notes to the coach (#65)", () => {
+  it("adds a note once per client id, lists newest first and rejects empty ones", async () => {
+    const id = await addClimberNote(db, { text: "  Short on time next week  " }, "n1");
+    expect(await addClimberNote(db, { text: "Short on time next week" }, "n1")).toBe(id);
+    await addClimberNote(db, { text: "Second note" }, null);
+    expect((await listClimberNotes(db)).map((n) => n.text)).toEqual(["Second note", "Short on time next week"]);
+    await expect(addClimberNote(db, { text: " " }, null)).rejects.toThrow(/note is required/);
+    await expect(addClimberNote(db, { text: "x".repeat(2001) }, null)).rejects.toThrow(/too long/);
+  });
+
+  it("reaches the next daily review, and only notes written since the last run", async () => {
+    exec("INSERT INTO climber_notes (text, created_at) VALUES ('Old note', '2026-05-08T10:00:00Z')");
+    exec("INSERT INTO climber_notes (text, created_at) VALUES ('New note', '2026-05-10T08:00:00Z')");
+    const c = await changesSince(db, { seen_through: "2026-05-09T21:00:00Z", created_at: "2026-05-09T21:01:00Z" }, TODAY);
+    expect(c.notes_from_climber.map((n) => n.text)).toEqual(["New note"]);
+    expect(reviewDecision({ seen_through: "2026-05-09T21:00:00Z" }, c, 7).reasons).toContain("1 note from the climber");
+  });
+});
+
 describe("app feedback", () => {
   it("adds feedback once per client id and lists it newest first", async () => {
     const id = await addFeedback(db, { text: " Bigger buttons please " }, "k1");
@@ -579,6 +631,19 @@ describe("app feedback", () => {
     await addFeedback(db, { text: "Second" }, null);
     expect((await listFeedback(db)).map((f) => [f.text, f.status])).toEqual([["Second", "new"], ["Bigger buttons please", "new"]]);
     await expect(addFeedback(db, { text: "  " }, null)).rejects.toThrow(/feedback is required/);
+  });
+
+  it("edits feedback until the coach has handled it, and deletes it", async () => {
+    const id = await addFeedback(db, { text: "Dark mode" }, null);
+    await editFeedback(db, id, { text: " Dark mode please " });
+    expect((await listFeedback(db))[0].text).toBe("Dark mode please");
+    await expect(editFeedback(db, id, { text: " " })).rejects.toThrow(/feedback is required/);
+    await resolveFeedback(db, id, parseResolution({ status: "declined", reply: "Not actionable" }));
+    await expect(editFeedback(db, id, { text: "Changed" })).rejects.toThrow(/waiting for review/);
+    await expect(editFeedback(db, 999, { text: "x" })).rejects.toThrow(/not found/);
+    await deleteFeedback(db, id);
+    expect(await listFeedback(db)).toEqual([]);
+    await expect(deleteFeedback(db, id)).rejects.toThrow(/not found/);
   });
 
   it("records what the coach did with it", async () => {

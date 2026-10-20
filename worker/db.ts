@@ -31,6 +31,13 @@ export interface Env {
   GITHUB_TOKEN?: string; // optional, enables the issue tools (see worker/github.ts)
   GITHUB_REPO?: string; // "owner/repo"
   GITHUB_ROADMAP_ISSUE?: string; // optional: number of the roadmap issue new issues are listed in
+  DEPLOYED_COMMIT_EPOCH?: string; // set by CI on deploy: the deployed commit's time in unix seconds (#70)
+  // Optional secrets: the API triggers of the coach review and issue worker routines, so the app can start
+  // them (worker/routines.ts). Each URL is the one shown with its token at claude.ai/code/routines.
+  COACH_REVIEW_FIRE_URL?: string;
+  COACH_REVIEW_FIRE_TOKEN?: string;
+  ISSUE_WORKER_FIRE_URL?: string;
+  ISSUE_WORKER_FIRE_TOKEN?: string;
 }
 
 type Row = Record<string, unknown>;

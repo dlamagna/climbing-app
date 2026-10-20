@@ -61,7 +61,7 @@ export default function History() {
           <TypeWeekChart weekStarts={data.load.weeks.map((w) => w.week_start)} sessions={data.sessions} />
         )}
       </Card>
-      <TrainingMix sessions={data.sessions} from={from} today={today} />
+      <TrainingMix sessions={data.sessions} from={from} today={today} onChanged={reload} />
 
       {dates.length === 0 && <p className="muted">Nothing logged yet.</p>}
       {dates.map((date) => {

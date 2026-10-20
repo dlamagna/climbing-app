@@ -22,8 +22,10 @@ import {
   upsertCheckin,
 } from "./db";
 import { parseExpectedBenchmarks, sessionBenchmarkWrites } from "./benchmarks";
-import { addFeedback, answerQuestion, listFeedback, setClimbingDays } from "./coach";
-import { BadRequest } from "./errors";
+import { addClimberNote, addFeedback, answerQuestion, coachActivity, deleteFeedback, editFeedback, listClimberNotes, listFeedback, setClimbingDays } from "./coach";
+import { BadRequest, NotFound } from "./errors";
+import { withIssueStatus } from "./github";
+import { fireRoutine, isRoutineName, routinesAvailable } from "./routines";
 import { buildExport, exportFilename, quoteIdent, toCsv, userTables } from "./export";
 import {
   type InjuryUpdate,
@@ -379,6 +381,22 @@ api.put("/coach/questions/:id", async (c) => {
   return c.json(await answerQuestion(c.env.DB, Number(c.req.param("id")), await c.req.json(), today));
 });
 
+// Notes to the coach (#65): free text sent from Today; the next daily review reads them.
+api.get("/coach/notes", async (c) => c.json(await listClimberNotes(c.env.DB)));
+api.post("/coach/notes", async (c) => c.json({ id: await addClimberNote(c.env.DB, await c.req.json(), clientId(c)) }));
+
+// Coach activity for Settings (#64): last run, when the next one is expected, and past runs.
+api.get("/coach/runs", async (c) => c.json(await coachActivity(c.env.DB, Number(c.req.query("limit") ?? 30))));
+
+// Start the coach review or the issue worker now, from Settings → Coach activity (needs the routine's
+// API trigger secrets; see worker/routines.ts).
+api.get("/coach/routines", (c) => c.json(routinesAvailable(c.env)));
+api.post("/coach/routines/:name/run", async (c) => {
+  const name = c.req.param("name");
+  if (!isRoutineName(name)) throw new NotFound(`No routine "${name}"`);
+  return c.json(await fireRoutine(c.env, name));
+});
+
 // Climbing days picked with Today's "Plan my climbing days" button (#56): { days: [dates], note }.
 api.put("/coach/climbing-days", async (c) => {
   const today = todayIn((await getProfile(c.env.DB)).timezone);
@@ -386,8 +404,16 @@ api.put("/coach/climbing-days", async (c) => {
 });
 
 // App feedback (#52): typed in the app, triaged into GitHub issues by the daily coach review.
-api.get("/feedback", async (c) => c.json(await listFeedback(c.env.DB)));
+api.get("/feedback", async (c) => c.json(await withIssueStatus(c.env, await listFeedback(c.env.DB))));
 api.post("/feedback", async (c) => c.json({ id: await addFeedback(c.env.DB, await c.req.json(), clientId(c)) }));
+api.put("/feedback/:id", async (c) => {
+  await editFeedback(c.env.DB, Number(c.req.param("id")), await c.req.json());
+  return c.json({ ok: true });
+});
+api.delete("/feedback/:id", async (c) => {
+  await deleteFeedback(c.env.DB, Number(c.req.param("id")));
+  return c.json({ ok: true });
+});
 
 api.get("/benchmarks", async (c) => {
   const { results } = await c.env.DB.prepare("SELECT * FROM benchmarks ORDER BY date DESC, id DESC").all();
