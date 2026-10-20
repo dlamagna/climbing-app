@@ -1,4 +1,4 @@
-// Settings' coach activity (#64): when the daily review last ran, when the next run is expected, and a
+// The Coach tab's coach activity (#64, #80): when the daily review last ran, when the next run is expected, and a
 // browsable history of past runs with their outcome, summary and changes. With the routines' API triggers
 // set up, the review and the issue worker can also be started from here (#73).
 import { useState } from "react";
@@ -6,6 +6,7 @@ import { sendNow, toast, useApi } from "../api";
 import { nextRunLabel, stampLabel } from "../coachRuns";
 import { localToday } from "../dates";
 import type { CoachActivity as Activity, CoachRoutines, CoachRun } from "../types";
+import { StepList } from "./StepList";
 import { Card } from "./ui";
 
 const PAGE = 10;
@@ -18,7 +19,7 @@ function RunItem({ run, today }: { run: CoachRun; today: string }) {
         <strong>{stampLabel(run.created_at, today)}</strong> ·{" "}
         <span className={`tag status ${run.outcome === "updated" ? "done" : "skipped"}`}>{OUTCOME[run.outcome]}</span>
       </p>
-      {run.summary && <p className="small">{run.summary}</p>}
+      <StepList text={run.summary} className="steps small" />
       {run.changes.length > 0 && (
         <ul className="mini-list small">
           {run.changes.map((c, i) => (

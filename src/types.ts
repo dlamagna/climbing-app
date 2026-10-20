@@ -121,7 +121,7 @@ export interface CoachNote {
   text: string;
 }
 
-// Questions the daily coach review asks (worker/coach.ts); the Today screen shows the open ones.
+// Questions the daily coach review asks (worker/coach.ts); the Coach tab shows the open ones.
 export interface CoachQuestion {
   id: number;
   question: string;

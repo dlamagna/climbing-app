@@ -27,11 +27,11 @@ export const TABLE_DOCS: Record<string, string> = {
   injuries: "injuries; active while resolved_on is NULL",
   injury_updates: "daily follow-up for an injury, recorded from the morning check-in",
   plan: "planned sessions, usually written by Claude via MCP set_plan",
-  coach_notes: "recommendations Claude writes back; shown on the app's Today screen",
+  coach_notes: "recommendations Claude writes back; shown on the app's Coach tab",
   coach_runs: "one row per daily coach review run (MCP record_coach_run); the next run reviews data written after seen_through",
   app_feedback: "feedback about the app typed in the app; the daily coach review triages it into GitHub issues (MCP resolve_feedback)",
-  climber_notes: "free-text notes the climber sends the coach from the app's Today screen; the daily review gets the ones written since its last run",
-  coach_questions: "questions Claude asks the climber (MCP ask_question); shown on the app's Today screen until answered, skipped, expired or closed",
+  climber_notes: "free-text notes the climber sends the coach from the app's Coach tab; the daily review gets the ones written since its last run",
+  coach_questions: "questions Claude asks the climber (MCP ask_question); shown on the app's Coach tab until answered, skipped, expired or closed",
   benchmarks: "benchmark / test results over time",
   profile: "free-form facts about the climber as key/value pairs: goal, trip_date, level, availability, timezone... Not injuries: those are rows in injuries",
 };
@@ -145,7 +145,7 @@ export const COLUMN_DOCS: Record<string, Record<string, string>> = {
   coach_runs: {
     id: "row id",
     outcome: "'updated' (changed the plan, notes, profile or questions) | 'no_change'",
-    summary: "one or two lines for the climber, shown on the Today screen; NULL for runs with nothing new",
+    summary: "one or two lines for the climber, shown on the Coach tab; NULL for runs with nothing new",
     changes: "JSON array of short strings: what the run changed; NULL if nothing",
     seen_through: "UTC timestamp: data written up to here was reviewed (the next run looks at rows created or updated after it)",
     created_at: CREATED_AT,

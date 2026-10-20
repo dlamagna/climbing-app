@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planSteps } from "./planDetails";
+import { planSteps, textSteps } from "./planDetails";
 
 describe("planSteps", () => {
   it("returns nothing for empty details", () => {
@@ -33,5 +33,20 @@ describe("planSteps", () => {
   it("keeps a long lead-in as plain text", () => {
     const long = "This is a very long sentence that happens to contain: a colon";
     expect(planSteps(long)).toEqual([{ label: null, text: long }]);
+  });
+
+  it("splits clauses at semicolons in a paragraph", () => {
+    expect(textSteps("Next week follows your picked days. Saturday is rest; the test moves to Sunday so the climb is fresh.")).toEqual([
+      { label: null, text: "Next week follows your picked days" },
+      { label: null, text: "Saturday is rest" },
+      { label: null, text: "The test moves to Sunday so the climb is fresh" },
+    ]);
+  });
+
+  it("keeps semicolons inside a line", () => {
+    expect(textSteps("Main: 4 x 4; rest 3 min\nCool down")).toEqual([
+      { label: "Main", text: "4 x 4; rest 3 min" },
+      { label: null, text: "Cool down" },
+    ]);
   });
 });

@@ -24,22 +24,23 @@ prompt never needs to change.
     "Suggested: ...".
   - **may leave a coach note** for tomorrow.
   - **may ask you a question** the data can't answer, such as your plans for the week or a trip. It asks at
-    most a couple per run and keeps no more than 3 open. They show on the Today screen as one-tap cards.
+    most a couple per run and keeps no more than 3 open. They show on the Coach tab as one-tap cards, and Today links there while any are waiting.
   - **sorts app feedback** you sent under More → App feedback. Each item is marked as a duplicate of an
     existing issue, declined, or filed as a GitHub issue with a priority and milestone and added to the
     roadmap issue. Filing needs the [GitHub token](../README.md#optional-file-github-issues-from-claude).
 - Every run ends with `record_coach_run`, which logs the outcome. Its timestamp is where the next run starts
-  looking for new data. The Today screen shows what the last review changed.
+  looking for new data. The Coach tab shows what the last review changed.
 
 ### Your input in the app
 
 | Where | What | Used by the review |
 |---|---|---|
-| Today → *Coach asks* | Questions from the review. Tap an answer, type one, or skip | The next run uses the answer, then closes the question |
+| Coach → *Coach asks* | Questions from the review. Tap an answer, type one, or skip | The next run uses the answer, then closes the question |
 | Weekly pop-up (Monday to Wednesday) | *Which days do you plan to climb this week?* | The week's climbing goes on those days |
-| Today → *Plan my climbing days* | Pick days from today to 9 days ahead, with an optional note, any time | Same as the weekly question; the latest pick wins |
+| Coach → *Plan my climbing days* | Pick days from today to 9 days ahead, with an optional note, any time | Same as the weekly question; the latest pick wins |
 | More → App feedback | Bugs and ideas about the app | Sorted into GitHub issues |
-| Settings → Pop-ups | Turns the weekly pop-up off. The question still shows as a card on Today | - |
+| Coach → Weekly pop-up | Turns the weekly pop-up off. The question still shows as a card on the Coach tab | - |
+| Coach → *Send a note to the coach* | Free-text context, e.g. a busy week or a goal | Read in the next run |
 
 Answers reach the review the same night. A pick made in the morning changes the plan from tomorrow on,
 because the review never rewrites today.
@@ -108,8 +109,8 @@ any Claude chat that has the connector.
 
 ## Checking on it
 
-- **In the app:** the coach card on Today shows the last review that changed something, and *What changed*
-  lists the changes.
+- **In the app:** the Coach tab shows the last review that changed something (*What changed* lists the
+  changes) and the coach activity history.
 - **In Claude:** ask "when did the daily review last run and what did it do?". `get_overview` returns
   `coach.last_run`. With the `query` tool you can list all runs:
   `SELECT created_at, outcome, summary FROM coach_runs ORDER BY id DESC LIMIT 10`.
@@ -123,7 +124,7 @@ any Claude chat that has the connector.
 | Every run says "no_change" though you trained | The session was logged after the run started; it will be picked up the next night. Or the run failed before `record_coach_run`; check the run log |
 | A review on a day with nothing new | Fewer than 3 of the next 7 days had a plan entry, so the run filled them |
 | Questions never show up | The run asked none (it only asks when the answer would change the plan), or they expired. They last 3 days by default |
-| The weekly pop-up doesn't appear | Pop-ups are off in Settings, it's Thursday or later, or this week's question was already answered or replaced by *Plan my climbing days* |
+| The weekly pop-up doesn't appear | The pop-up is off on the Coach tab, it's Thursday or later, or this week's question was already answered or replaced by *Plan my climbing days* |
 | Feedback stays "waiting for review" | No GitHub token is set, so the run can't file issues |
 
 ## Privacy
