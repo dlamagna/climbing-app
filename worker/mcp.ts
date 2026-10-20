@@ -283,7 +283,11 @@ const TOOLS: Tool[] = [
               title: { type: "string", description: "Short, e.g. 'Limit bouldering' or 'Rest'" },
               type: { type: "string", enum: [...SESSION_TYPES, "rest"] },
               intensity: { type: "string", enum: ["rest", "easy", "moderate", "hard"] },
-              details: { type: "string", description: "The actual workout: warm-up, sets, grades, times" },
+              details: {
+                type: "string",
+                description:
+                  "The actual workout as short lines, one per block, separated by newlines (the app shows each line as a bullet). Start each with a short label and a colon, e.g. 'Warm-up 15 min: easy routes'. Keep each line under ~80 characters; no prose or repeated advice.",
+              },
               duration_min: { type: "integer", minimum: 1, description: "Planned length; a much shorter session counts as partial" },
               expected_benchmarks: {
                 type: "array",

@@ -20,6 +20,7 @@ import { WeekSummary } from "../components/WeekSummary";
 import { Card, Chips, DatePicker, Field, Stepper, range } from "../components/ui";
 import { dayLabel, localToday, prettyDate } from "../dates";
 import { type Checkin, type Injury, type LoadStats, type PlanEntry, type Readiness, type TodayView, typeLabel } from "../types";
+import { planSteps } from "../planDetails";
 
 export const FEELING = ["", "Wrecked", "Tired", "OK", "Good", "Fresh"];
 export const SLEEP_QUALITY = ["", "Bad", "OK", "Good"];
@@ -163,9 +164,24 @@ export function PlanItem({ entry, today, onChanged }: { entry: PlanEntry; today?
         {entry.intensity && <span className={`tag ${entry.intensity}`}>{entry.intensity}</span>}
         {today && <StatusChip entry={entry} today={today} onChanged={onChanged} />}
       </div>
-      {entry.details && <p className="prewrap muted">{entry.details}</p>}
+      <PlanSteps details={entry.details} />
       {today && <PlanFlags flags={entry.flags} today={today} />}
     </div>
+  );
+}
+
+function PlanSteps({ details }: { details: string | null }) {
+  const steps = planSteps(details);
+  if (steps.length === 0) return null;
+  return (
+    <ul className="plan-steps">
+      {steps.map((s, i) => (
+        <li key={i}>
+          {s.label && <strong>{s.label}: </strong>}
+          {s.text}
+        </li>
+      ))}
+    </ul>
   );
 }
 

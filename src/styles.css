@@ -372,6 +372,19 @@ button {
   gap: 4px;
   flex: 1;
 }
+.plan-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.plan-steps strong {
+  color: var(--text);
+  font-weight: 600;
+}
 .plan-title {
   display: flex;
   gap: 8px;
