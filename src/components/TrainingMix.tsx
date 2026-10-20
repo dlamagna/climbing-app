@@ -10,7 +10,7 @@ import { MixSummary } from "./MixSummary";
 import { SessionCalendar } from "./SessionCalendar";
 import { Card } from "./ui";
 
-export function TrainingMix({ sessions, from, today }: { sessions: Session[]; from: string; today: string }) {
+export function TrainingMix({ sessions, from, today, onChanged }: { sessions: Session[]; from: string; today: string; onChanged?: () => void }) {
   const [month, setMonth] = useState(monthOf(today));
   const [period, setPeriod] = useState<MixPeriod>("4w");
 
@@ -32,7 +32,12 @@ export function TrainingMix({ sessions, from, today }: { sessions: Session[]; fr
   return (
     <>
       <Card title="Calendar">
-        <SessionCalendar month={month} onMonth={setMonth} sessions={monthSessions ?? []} today={today} loading={older && monthApi.loading} />
+        <SessionCalendar month={month} onMonth={setMonth} sessions={monthSessions ?? []} today={today} loading={older && monthApi.loading}
+          onChanged={() => {
+            onChanged?.();
+            if (older) monthApi.reload();
+          }}
+        />
         {older && monthApi.error && <p className="error small">{monthApi.error}</p>}
       </Card>
       <Card title="Training mix">

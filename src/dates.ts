@@ -30,3 +30,8 @@ export function dayLabel(date: string, today = localToday()): string {
   if (date === addDays(today, 1)) return "Tomorrow";
   return prettyDate(date);
 }
+
+// #/log?date=YYYY-MM-DD (from a History calendar day) starts a new session on that past or current day.
+export function presetLogDate(param: string | null, today: string) {
+  return param && /^\d{4}-\d{2}-\d{2}$/.test(param) && param <= today ? param : null;
+}
