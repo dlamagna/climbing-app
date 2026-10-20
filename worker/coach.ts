@@ -323,6 +323,17 @@ export interface FeedbackRow {
   created_at: string;
 }
 
+// Notes the climber sends the coach from the Today screen (#65).
+const MAX_CLIMBER_NOTE = 2000;
+export interface ClimberNote {
+  id: number;
+  text: string;
+  created_at: string;
+}
+
+export const parseClimberNote = (body: unknown): string =>
+  text(((body ?? {}) as Record<string, unknown>).text, "note", MAX_CLIMBER_NOTE, true)!;
+
 export const parseFeedback = (body: unknown): string =>
   text(((body ?? {}) as Record<string, unknown>).text, "feedback", MAX_FEEDBACK, true)!;
 
@@ -363,6 +374,7 @@ export interface ReviewChanges {
   answered_questions: Question[];
   skipped_questions: Question[];
   new_feedback: Pick<FeedbackRow, "id" | "text" | "created_at">[];
+  notes_from_climber: ClimberNote[];
   checkins: number;
   benchmarks: number;
 }
@@ -387,6 +399,9 @@ export function reviewDecision(
   if (c.profile_keys.length) reasons.push(`profile changed (${c.profile_keys.join(", ")})`);
   if (c.plan_entries_added_by_hand.length) reasons.push("plan entries added by hand");
   if (c.new_feedback.length) reasons.push(`${c.new_feedback.length} app feedback item${c.new_feedback.length === 1 ? "" : "s"} to triage`);
+  if (c.notes_from_climber.length) {
+    reasons.push(`${c.notes_from_climber.length} note${c.notes_from_climber.length === 1 ? "" : "s"} from the climber`);
+  }
   if (c.answered_questions.length) reasons.push(`${c.answered_questions.length} question${c.answered_questions.length === 1 ? "" : "s"} answered`);
   if (plannedDaysAhead < MIN_PLANNED_DAYS_AHEAD) reasons.push(`only ${plannedDaysAhead} of the next 7 days planned`);
   return { review_needed: reasons.length > 0, reasons };
@@ -415,6 +430,10 @@ the climber anything in chat, work only through these tools.
    within the ${CLIMB_DAYS_AHEAD} days from that date, "${NO_CLIMBING}" = none). You don't need to decode these
    answers: climbing_days (in this result and in get_overview's coach) is the latest pick that still applies,
    already as dates, and stays there after you close the question.
+
+   Notes from the climber (changes.notes_from_climber): extra context they sent you from the app. Use it like
+   an answer: lasting facts to the profile, short-lived ones into the plan. Mention it in the summary when it
+   changed something.
 
 4. Plan: keep the next 7 days filled, starting tomorrow, and further when climbing_days.to reaches past them
    (up to that day). Change only what the new data calls for; if the
@@ -583,7 +602,7 @@ export async function changesSince(
 ): Promise<ReviewChanges> {
   const s = last?.seen_through ?? nowStamp(new Date(Date.now() - FIRST_RUN_LOOKBACK_DAYS * 86_400_000));
   const p = last?.created_at ?? s;
-  const [sessions, newInjuries, updates, profile, planByHand, answered, skipped, feedback, checkins, benchmarks] = await Promise.all([
+  const [sessions, newInjuries, updates, profile, planByHand, answered, skipped, feedback, notes, checkins, benchmarks] = await Promise.all([
     all<ChangedSession & { created_at: string }>(
       db,
       `SELECT id, date, type, duration_min, rpe, created_at FROM sessions
@@ -603,6 +622,7 @@ export async function changesSince(
     all<QuestionRow>(db, "SELECT * FROM coach_questions WHERE closed_at IS NULL AND answered_at IS NOT NULL ORDER BY id"),
     all<QuestionRow>(db, "SELECT * FROM coach_questions WHERE closed_at IS NULL AND skipped_at IS NOT NULL ORDER BY id"),
     all<ReviewChanges["new_feedback"][number]>(db, "SELECT id, text, created_at FROM app_feedback WHERE status = 'new' ORDER BY id"),
+    all<ClimberNote>(db, "SELECT id, text, created_at FROM climber_notes WHERE created_at >= ? ORDER BY id", s),
     db.prepare("SELECT COUNT(*) AS n FROM checkins WHERE updated_at >= ?").bind(s).first<{ n: number }>(),
     db.prepare("SELECT COUNT(*) AS n FROM benchmarks WHERE created_at >= ?").bind(s).first<{ n: number }>(),
   ]);
@@ -615,6 +635,7 @@ export async function changesSince(
     answered_questions: answered.map((r) => decodeQuestion(r, today)),
     skipped_questions: skipped.map((r) => decodeQuestion(r, today)),
     new_feedback: feedback,
+    notes_from_climber: notes,
     checkins: checkins?.n ?? 0,
     benchmarks: benchmarks?.n ?? 0,
   };
@@ -626,6 +647,21 @@ export const listFeedback = (db: D1Database) =>
     db,
     "SELECT id, text, status, issue_number, issue_url, reply, handled_at, created_at FROM app_feedback ORDER BY id DESC LIMIT 50",
   );
+
+// The climber's notes to the coach, newest first, for the app.
+export const listClimberNotes = (db: D1Database, limit = 20) =>
+  all<ClimberNote>(db, "SELECT id, text, created_at FROM climber_notes ORDER BY id DESC LIMIT ?", limit);
+
+// clientId makes a replayed offline send return the first row instead of adding a copy.
+export async function addClimberNote(db: D1Database, body: unknown, clientId: string | null): Promise<number> {
+  const t = parseClimberNote(body);
+  const row = await db
+    .prepare("INSERT INTO climber_notes (text, client_id) VALUES (?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id")
+    .bind(t, clientId)
+    .first<{ id: number }>();
+  if (row) return row.id;
+  return (await db.prepare("SELECT id FROM climber_notes WHERE client_id = ?").bind(clientId).first<{ id: number }>())!.id;
+}
 
 // clientId makes a replayed offline submit return the first row instead of adding a copy.
 export async function addFeedback(db: D1Database, body: unknown, clientId: string | null): Promise<number> {

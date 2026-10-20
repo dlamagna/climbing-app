@@ -5,7 +5,7 @@ import { useState } from "react";
 import { savedToast, send } from "../api";
 import { addDays, dayLabel, localDateOf, shortDay } from "../dates";
 import { popupsEnabled } from "../prefs";
-import { NO_CLIMBING, climbingDaysBody, isWeekly, multiAnswer, plannerDays, togglePick } from "../coachAnswers";
+import { MAX_COACH_NOTE, NO_CLIMBING, climbingDaysBody, coachNoteBody, isWeekly, multiAnswer, plannerDays, togglePick } from "../coachAnswers";
 import type { CoachQuestion, CoachRun } from "../types";
 import { Card } from "./ui";
 
@@ -255,5 +255,58 @@ export function CoachUpdate({ run, today }: { run: CoachRun; today: string }) {
           </button>
         ))}
     </div>
+  );
+}
+
+// Free-text context for the coach (#65), sent from Today. Stored, and handed to the next daily review.
+export function NoteToCoach() {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const body = coachNoteBody(text);
+
+  async function submit() {
+    if (!body) return;
+    setBusy(true);
+    try {
+      savedToast(await send("POST", "/coach/notes", body), "Sent - the coach reads it in the next daily review");
+      setText("");
+      setOpen(false);
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button className="btn block" onClick={() => setOpen(true)}>
+        Send a note to the coach
+      </button>
+    );
+  }
+  return (
+    <Card title="Note to the coach">
+      <div className="form">
+        <textarea
+          rows={4}
+          maxLength={MAX_COACH_NOTE}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Anything the coach should know, e.g. a busy week coming up or a goal you want to focus on"
+          autoFocus
+        />
+        <p className="muted small">Used in the next daily review.</p>
+        <div className="actions">
+          <button className="btn" onClick={() => setOpen(false)} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={submit} disabled={busy || !body}>
+            Send
+          </button>
+        </div>
+      </div>
+    </Card>
   );
 }

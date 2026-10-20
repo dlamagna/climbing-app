@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   MAX_OPEN_QUESTIONS,
   type ReviewChanges,
+  addClimberNote,
   addFeedback,
   answerQuestion,
   askQuestion,
@@ -20,6 +21,7 @@ import {
   ensureWeeklyQuestion,
   lastRun,
   lastUpdate,
+  listClimberNotes,
   listFeedback,
   nowStamp,
   openQuestions,
@@ -252,6 +254,7 @@ describe("reviewDecision", () => {
     answered_questions: [],
     skipped_questions: [],
     new_feedback: [],
+    notes_from_climber: [],
     checkins: 2,
     benchmarks: 1,
   };
@@ -275,12 +278,14 @@ describe("reviewDecision", () => {
       profile_keys: ["goal"],
       answered_questions: [{} as never],
       new_feedback: [{ id: 1, text: "x", created_at: "" }],
+      notes_from_climber: [{ id: 1, text: "y", created_at: "" }, { id: 2, text: "z", created_at: "" }],
     };
     expect(reviewDecision(last, c, 2).reasons).toEqual([
       "1 session logged",
       "1 session edited",
       "profile changed (goal)",
       "1 app feedback item to triage",
+      "2 notes from the climber",
       "1 question answered",
       "only 2 of the next 7 days planned",
     ]);
@@ -515,6 +520,25 @@ describe("set_plan keep_app_entries", () => {
       { title: "New", source: "coach" },
       { title: "Mine", source: "app" },
     ]);
+  });
+});
+
+describe("notes to the coach (#65)", () => {
+  it("adds a note once per client id, lists newest first and rejects empty ones", async () => {
+    const id = await addClimberNote(db, { text: "  Short on time next week  " }, "n1");
+    expect(await addClimberNote(db, { text: "Short on time next week" }, "n1")).toBe(id);
+    await addClimberNote(db, { text: "Second note" }, null);
+    expect((await listClimberNotes(db)).map((n) => n.text)).toEqual(["Second note", "Short on time next week"]);
+    await expect(addClimberNote(db, { text: " " }, null)).rejects.toThrow(/note is required/);
+    await expect(addClimberNote(db, { text: "x".repeat(2001) }, null)).rejects.toThrow(/too long/);
+  });
+
+  it("reaches the next daily review, and only notes written since the last run", async () => {
+    exec("INSERT INTO climber_notes (text, created_at) VALUES ('Old note', '2026-05-08T10:00:00Z')");
+    exec("INSERT INTO climber_notes (text, created_at) VALUES ('New note', '2026-05-10T08:00:00Z')");
+    const c = await changesSince(db, { seen_through: "2026-05-09T21:00:00Z", created_at: "2026-05-09T21:01:00Z" }, TODAY);
+    expect(c.notes_from_climber.map((n) => n.text)).toEqual(["New note"]);
+    expect(reviewDecision({ seen_through: "2026-05-09T21:00:00Z" }, c, 7).reasons).toContain("1 note from the climber");
   });
 });
 
