@@ -154,6 +154,7 @@ export const COLUMN_DOCS: Record<string, Record<string, string>> = {
     id: "row id",
     text: "the feedback as typed (private: never copied into the public repo)",
     status: "'new' | 'filed' (became issue_number) | 'duplicate' (already covered by issue_number) | 'declined'",
+    priority: "'P0' | 'P1' | 'P2' picked in the app (the review files the issue with it); NULL = not picked, the review decides",
     issue_number: "GitHub issue it was filed as or is a duplicate of; NULL otherwise",
     issue_url: "that issue's link",
     reply: "Claude's short note back, shown in the app",

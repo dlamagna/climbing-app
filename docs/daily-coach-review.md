@@ -28,6 +28,8 @@ prompt never needs to change.
   - **sorts app feedback** you sent under More → App feedback. Each item is marked as a duplicate of an
     existing issue, declined, or filed as a GitHub issue with a priority and milestone and added to the
     roadmap issue. Filing needs the [GitHub token](../README.md#optional-file-github-issues-from-claude).
+    The priority is the one you picked in the form (see [Feedback priority](#feedback-priority)); the
+    review only chooses one when you didn't pick any.
 - Every run ends with `record_coach_run`, which logs the outcome. Its timestamp is where the next run starts
   looking for new data. The Coach tab shows what the last review changed.
 
@@ -38,12 +40,26 @@ prompt never needs to change.
 | Coach → *Coach asks* | Questions from the review. Tap an answer, type one, or skip | The next run uses the answer, then closes the question |
 | Weekly pop-up (Monday to Wednesday) | *Which days do you plan to climb this week?* | The week's climbing goes on those days |
 | Coach → *Plan my climbing days* | Pick days from today to 9 days ahead, with an optional note, any time | Same as the weekly question; the latest pick wins |
-| More → App feedback | Bugs and ideas about the app | Sorted into GitHub issues |
+| More → App feedback | Bugs and ideas about the app, with an optional priority | Sorted into GitHub issues with that priority |
 | Coach → Weekly pop-up | Turns the weekly pop-up off. The question still shows as a card on the Coach tab | - |
 | Coach → *Send a note to the coach* | Free-text context, e.g. a busy week or a goal | Read in the next run |
 
 Answers reach the review the same night. A pick made in the morning changes the plan from tomorrow on,
 because the review never rewrites today.
+
+### Feedback priority
+
+The feedback form has an optional priority. The review files the issue with the `priority: Px` label you
+picked and doesn't change it:
+
+| Priority | Meaning | What happens |
+|---|---|---|
+| P0 | Blocks daily use | Filed as P0 in the next review |
+| P1 | Worth doing soon | Filed as P1. A nightly development run, if you set one up, works on open P0 and P1 issues (P0 first) |
+| P2 | Nice to have | Filed as P2 with the `backlog` label, and listed under the roadmap issue's *Backlog* section |
+| none | - | The review picks the priority itself, as before |
+
+Feedback sent before the picker existed has no priority, so the review picks one for it too.
 
 ## Set it up
 
