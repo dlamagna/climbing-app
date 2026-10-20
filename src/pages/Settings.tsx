@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { fetchFile, savedToast, send, setToken, toast, useApi } from "../api";
+import { CoachActivity } from "../components/coachActivity";
 import { Card, Chips, Field, PageHeader } from "../components/ui";
 import { popupsEnabled, setPopupsEnabled } from "../prefs";
 
@@ -106,6 +107,7 @@ export default function Settings() {
           onChange={(v) => v && changePopups(v === "on")}
         />
       </Card>
+      <CoachActivity />
       <Card title="Connect Claude">
         <p className="small">Add a custom connector in Claude (Settings → Connectors) with this URL, using your MCP token:</p>
         <code className="block-code">{location.origin}/mcp/&lt;MCP_TOKEN&gt;</code>

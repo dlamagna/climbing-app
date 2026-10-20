@@ -17,12 +17,15 @@ import {
   climbingDaysAnswer,
   climbingDaysContext,
   closeQuestions,
+  coachActivity,
   currentClimbingDays,
   ensureWeeklyQuestion,
   lastRun,
   lastUpdate,
   listClimberNotes,
   listFeedback,
+  listRuns,
+  nextRunExpected,
   nowStamp,
   openQuestions,
   parseAnswer,
@@ -458,6 +461,29 @@ describe("runs and what changed", () => {
     await recordRun(db, { outcome: "no_change", summary: null, changes: [], seen_through: "2026-05-10T21:00:00Z" });
     expect((await lastRun(db))!.outcome).toBe("no_change");
     expect(await lastUpdate(db)).toMatchObject({ summary: "Moved a session", changes: ["moved"] });
+  });
+
+  it("lists past runs newest first and expects the next one a day after the last (#64)", async () => {
+    expect(await coachActivity(db)).toEqual({ last_run: null, next_run_expected: null, interval_hours: 24, runs: [] });
+    await recordRun(db, { outcome: "updated", summary: "Added a rest day", changes: ["rest day", "lighter week"], seen_through: T0 });
+    await recordRun(db, { outcome: "no_change", summary: null, changes: [], seen_through: "2026-05-10T21:00:00Z" });
+    exec("UPDATE coach_runs SET created_at = '2026-05-09T21:01:00Z' WHERE id = 1");
+    exec("UPDATE coach_runs SET created_at = '2026-05-10T21:01:00Z' WHERE id = 2");
+    const a = await coachActivity(db);
+    expect(a.runs.map((r) => [r.id, r.outcome, r.changes])).toEqual([
+      [2, "no_change", []],
+      [1, "updated", ["rest day", "lighter week"]],
+    ]);
+    expect(a.last_run!.id).toBe(2);
+    expect(a.next_run_expected).toBe("2026-05-11T21:01:00Z");
+    expect((await listRuns(db, 1)).map((r) => r.id)).toEqual([2]);
+    expect((await listRuns(db, Number.NaN)).length).toBe(2);
+  });
+
+  it("has no next-run estimate without a valid last run", () => {
+    expect(nextRunExpected(null)).toBeNull();
+    expect(nextRunExpected({ created_at: "not a date" })).toBeNull();
+    expect(nextRunExpected({ created_at: "2026-12-31T23:30:00Z" })).toBe("2027-01-01T23:30:00Z");
   });
 
   it("finds sessions logged or edited since the last run, and the rest of the changes", async () => {

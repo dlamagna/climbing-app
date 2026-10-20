@@ -6,6 +6,15 @@ import { Card, Field, PageHeader } from "../components/ui";
 import { dayLabel, localDateOf, localToday } from "../dates";
 import type { AppFeedback } from "../types";
 
+// The linked issue's progress (#70): "live" means the fix is in the running app.
+const ISSUE_STATUS: Record<NonNullable<AppFeedback["issue_status"]>, { label: string; cls: string }> = {
+  open: { label: "open", cls: "" },
+  merged: { label: "merged", cls: "partial" },
+  deploying: { label: "merged, deploying", cls: "partial" },
+  live: { label: "live", cls: "done" },
+  closed: { label: "closed", cls: "skipped" },
+};
+
 const STATUS: Record<AppFeedback["status"], string> = {
   new: "waiting for review",
   filed: "filed",
@@ -70,6 +79,12 @@ export default function Feedback() {
                         </a>
                       ) : (
                         `#${f.issue_number}`
+                      )}
+                      {f.issue_status && (
+                        <>
+                          {" "}
+                          <span className={`tag status ${ISSUE_STATUS[f.issue_status].cls}`}>{ISSUE_STATUS[f.issue_status].label}</span>
+                        </>
                       )}
                     </>
                   )}

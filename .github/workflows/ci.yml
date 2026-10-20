@@ -115,6 +115,13 @@ jobs:
       - if: steps.tip.outputs.current == 'true'
         run: npm run build
 
+      # The deployed commit's time (unix seconds). The app compares it with when a feedback item's
+      # issue closed to show whether the fix is live (#70).
+      - name: Deployed commit time
+        id: commit
+        if: steps.tip.outputs.current == 'true'
+        run: echo "epoch=$(git log -1 --format=%ct)" >> "$GITHUB_OUTPUT"
+
       # Uses the wrangler from package-lock.json. Commands run in order and stop at the first
       # failure, so a failed migration means no deploy.
       - name: Migrate D1, then deploy
@@ -125,4 +132,4 @@ jobs:
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: |
             d1 migrations apply climbing --remote
-            deploy
+            deploy --var DEPLOYED_COMMIT_EPOCH:${{ steps.commit.outputs.epoch }}

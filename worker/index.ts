@@ -22,8 +22,9 @@ import {
   upsertCheckin,
 } from "./db";
 import { parseExpectedBenchmarks, sessionBenchmarkWrites } from "./benchmarks";
-import { addClimberNote, addFeedback, answerQuestion, listClimberNotes, listFeedback, setClimbingDays } from "./coach";
+import { addClimberNote, addFeedback, answerQuestion, coachActivity, listClimberNotes, listFeedback, setClimbingDays } from "./coach";
 import { BadRequest } from "./errors";
+import { withIssueStatus } from "./github";
 import { buildExport, exportFilename, quoteIdent, toCsv, userTables } from "./export";
 import {
   type InjuryUpdate,
@@ -383,6 +384,9 @@ api.put("/coach/questions/:id", async (c) => {
 api.get("/coach/notes", async (c) => c.json(await listClimberNotes(c.env.DB)));
 api.post("/coach/notes", async (c) => c.json({ id: await addClimberNote(c.env.DB, await c.req.json(), clientId(c)) }));
 
+// Coach activity for Settings (#64): last run, when the next one is expected, and past runs.
+api.get("/coach/runs", async (c) => c.json(await coachActivity(c.env.DB, Number(c.req.query("limit") ?? 30))));
+
 // Climbing days picked with Today's "Plan my climbing days" button (#56): { days: [dates], note }.
 api.put("/coach/climbing-days", async (c) => {
   const today = todayIn((await getProfile(c.env.DB)).timezone);
@@ -390,7 +394,7 @@ api.put("/coach/climbing-days", async (c) => {
 });
 
 // App feedback (#52): typed in the app, triaged into GitHub issues by the daily coach review.
-api.get("/feedback", async (c) => c.json(await listFeedback(c.env.DB)));
+api.get("/feedback", async (c) => c.json(await withIssueStatus(c.env, await listFeedback(c.env.DB))));
 api.post("/feedback", async (c) => c.json({ id: await addFeedback(c.env.DB, await c.req.json(), clientId(c)) }));
 
 api.get("/benchmarks", async (c) => {

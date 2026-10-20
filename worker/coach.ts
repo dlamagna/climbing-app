@@ -581,6 +581,30 @@ export const lastRun = async (db: D1Database) =>
 export const lastUpdate = async (db: D1Database) =>
   decodeRun(await db.prepare("SELECT * FROM coach_runs WHERE outcome = 'updated' ORDER BY id DESC LIMIT 1").first());
 
+// The review runs once a day (a scheduled routine outside the app, so its exact schedule isn't stored here).
+export const RUN_INTERVAL_HOURS = 24;
+export const MAX_RUN_HISTORY = 100;
+
+// When the next run is expected: one interval after the last one (null before the first run).
+export function nextRunExpected(last: Pick<CoachRunRow, "created_at"> | null): string | null {
+  if (!last) return null;
+  const t = Date.parse(last.created_at);
+  return Number.isNaN(t) ? null : nowStamp(new Date(t + RUN_INTERVAL_HOURS * 3_600_000));
+}
+
+// Past runs, newest first, for the Settings screen's coach activity (#64).
+export async function listRuns(db: D1Database, limit = 30): Promise<CoachRunRow[]> {
+  const n = Math.min(Math.max(1, Math.trunc(limit) || 30), MAX_RUN_HISTORY);
+  const { results } = await db.prepare("SELECT * FROM coach_runs ORDER BY id DESC LIMIT ?").bind(n).all();
+  return (results as Parameters<typeof decodeRun>[0][]).map((r) => decodeRun(r)!);
+}
+
+export async function coachActivity(db: D1Database, limit?: number) {
+  const runs = await listRuns(db, limit);
+  const last = runs[0] ?? null;
+  return { last_run: last, next_run_expected: nextRunExpected(last), interval_hours: RUN_INTERVAL_HOURS, runs };
+}
+
 export async function recordRun(db: D1Database, run: CoachRun): Promise<number> {
   const row = await db
     .prepare("INSERT INTO coach_runs (outcome, summary, changes, seen_through) VALUES (?, ?, ?, ?) RETURNING id")
