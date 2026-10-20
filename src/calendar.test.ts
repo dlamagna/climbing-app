@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { presetLogDate } from "./dates";
 import { monthEnd, monthGrid, periodRange, sessionsByDay, shiftMonth } from "./calendar";
 
 // Made-up sample data only.
@@ -62,5 +63,15 @@ describe("periodRange", () => {
   it("covers the whole month on screen", () => {
     expect(periodRange("month", TODAY, "2026-10")).toEqual({ from: "2026-10-01", to: "2026-10-31" });
     expect(periodRange("month", TODAY, "2026-02")).toEqual({ from: "2026-02-01", to: "2026-02-28" });
+  });
+});
+
+describe("presetLogDate", () => {
+  it("accepts a past or current day and rejects the rest", () => {
+    expect(presetLogDate("2026-10-03", "2026-10-20")).toBe("2026-10-03");
+    expect(presetLogDate("2026-10-20", "2026-10-20")).toBe("2026-10-20");
+    expect(presetLogDate("2026-10-21", "2026-10-20")).toBeNull();
+    expect(presetLogDate("tomorrow", "2026-10-20")).toBeNull();
+    expect(presetLogDate(null, "2026-10-20")).toBeNull();
   });
 });
