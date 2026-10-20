@@ -1233,3 +1233,50 @@ button {
 .climbing-days.picker .actions {
   margin: 0;
 }
+
+/* Grade table and hardest-grade pages (#60) */
+.grade-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.grade-table th,
+.grade-table td {
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+.grade-table th {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+.grade-table td + td {
+  border-left: 1px solid var(--border);
+}
+.grade-table tr.hit td:first-child {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  font-weight: 700;
+}
+.grade-table td.mine::after,
+.grade-key::before {
+  content: "●";
+  color: var(--series-progress);
+  margin-left: 6px;
+  font-size: 0.7em;
+  font-style: normal;
+}
+.grade-key::before {
+  margin: 0 2px 0 0;
+}
+.grade-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+.grade-block + .grade-block {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}

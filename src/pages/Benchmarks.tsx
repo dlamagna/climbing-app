@@ -2,6 +2,9 @@ import { useState } from "react";
 import { savedToast, send, useApi } from "../api";
 import { LineChart } from "../components/LineChart";
 import { Card, Field, PageHeader } from "../components/ui";
+import { DISCIPLINE_NAMES, useAllSessions } from "../grades";
+import { GradeSummary } from "./GradeProgress";
+import { gradeProgress } from "../../worker/grades";
 import { addDays, localToday, prettyDate } from "../dates";
 import { type BenchmarkSeries, benchmarkSeries, formatClock, type Point, rollingAverage } from "../progress";
 import type { Benchmark } from "../types";
@@ -59,6 +62,7 @@ export default function Benchmarks() {
           <button className="btn primary block" disabled={!name.trim() || !value.trim()} onClick={submit}>Save</button>
         </div>
       </Card>
+      <HardestGradeCard />
       <BodyweightCard />
       {error && <p className="error">{error}</p>}
       {data && series.length === 0 && (
@@ -161,6 +165,28 @@ function BodyweightCard() {
             ))}
           </details>
         </>
+      )}
+    </Card>
+  );
+}
+
+// The hardest grade logged per discipline (from sessions' max grade), linking to the chart over time.
+function HardestGradeCard() {
+  const { sessions, today } = useAllSessions();
+  if (!sessions) return null;
+  const progress = gradeProgress(sessions, today);
+  const disciplines = (["boulder", "route"] as const).filter((d) => progress[d]);
+  return (
+    <Card title="Hardest grade" action={disciplines.length > 0 && <a className="link" href="#/grade-progress">Over time ›</a>}>
+      {disciplines.length === 0 ? (
+        <p className="muted small">No grades logged yet. Add your hardest grade when you log a climbing session.</p>
+      ) : (
+        disciplines.map((d) => (
+          <div key={d} className="grade-block">
+            <strong className="small">{DISCIPLINE_NAMES[d]}</strong>
+            <GradeSummary discipline={d} progress={progress[d]!} />
+          </div>
+        ))
       )}
     </Card>
   );
