@@ -142,6 +142,14 @@ export interface CoachRun {
   created_at: string; // UTC timestamp
 }
 
+// Settings' coach activity (GET /coach/runs, #64). The next run is an estimate: one interval after the last.
+export interface CoachActivity {
+  last_run: CoachRun | null;
+  next_run_expected: string | null; // UTC timestamp
+  interval_hours: number;
+  runs: CoachRun[]; // newest first
+}
+
 export interface AppFeedback {
   id: number;
   text: string;

@@ -22,7 +22,7 @@ import {
   upsertCheckin,
 } from "./db";
 import { parseExpectedBenchmarks, sessionBenchmarkWrites } from "./benchmarks";
-import { addFeedback, answerQuestion, listFeedback, setClimbingDays } from "./coach";
+import { addFeedback, answerQuestion, coachActivity, listFeedback, setClimbingDays } from "./coach";
 import { BadRequest } from "./errors";
 import { buildExport, exportFilename, quoteIdent, toCsv, userTables } from "./export";
 import {
@@ -378,6 +378,9 @@ api.put("/coach/questions/:id", async (c) => {
   const today = todayIn((await getProfile(c.env.DB)).timezone);
   return c.json(await answerQuestion(c.env.DB, Number(c.req.param("id")), await c.req.json(), today));
 });
+
+// Coach activity for Settings (#64): last run, when the next one is expected, and past runs.
+api.get("/coach/runs", async (c) => c.json(await coachActivity(c.env.DB, Number(c.req.query("limit") ?? 30))));
 
 // Climbing days picked with Today's "Plan my climbing days" button (#56): { days: [dates], note }.
 api.put("/coach/climbing-days", async (c) => {
