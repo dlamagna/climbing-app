@@ -1,4 +1,4 @@
-// Run the daily coach review or the nightly issue worker from the app (Settings → Coach activity).
+// Run the daily coach review or the nightly issue worker from the app (Coach → Coach activity).
 // Both are Claude Code routines with an API trigger. Each trigger has its own URL and token, created
 // at claude.ai/code/routines and stored as worker secrets. A token can only start its own routine.
 // See https://platform.claude.com/docs/en/api/claude-code/routines-fire
@@ -53,7 +53,7 @@ export async function fireRoutine(env: Env, name: RoutineName, now = Date.now())
         "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text: `Started from the app (Settings → Coach activity).` }),
+      body: JSON.stringify({ text: `Started from the app (Coach → Coach activity).` }),
       signal: AbortSignal.timeout(15_000),
     });
   } catch {

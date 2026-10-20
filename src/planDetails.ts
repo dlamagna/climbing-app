@@ -10,18 +10,29 @@ const ABBREVIATIONS = /\b(?:e\.g|i\.e|etc|approx|vs|min|max|sec|incl)\.$/i;
 const MAX_LABEL = 40;
 
 /**
- * Turns a plan entry's details into short steps for a bullet list.
- * Line-separated details (the format set_plan asks for) give one step per line; older details written as
- * one paragraph are split into sentences. A short lead-in before ": " becomes the step's label.
+ * Turns coach-written text (plan details, coach notes, review summaries) into short steps for a bullet list.
+ * Line-separated text (the format the coach is asked for) gives one step per line; older text written as one
+ * paragraph is split into sentences and at semicolons. A short lead-in before ": " becomes the step's label.
  */
-export function planSteps(details: string | null | undefined): PlanStep[] {
-  if (!details?.trim()) return [];
-  const lines = details
+export function textSteps(text: string | null | undefined): PlanStep[] {
+  if (!text?.trim()) return [];
+  const lines = text
     .split(/\n+/)
     .map((l) => l.replace(BULLET, "").trim())
     .filter(Boolean);
-  const parts = lines.length > 1 ? lines : splitSentences(lines[0]);
+  const parts = lines.length > 1 ? lines : splitSentences(lines[0]).flatMap(splitClauses);
   return parts.map(toStep);
+}
+
+export const planSteps = textSteps;
+
+// "Tomorrow is rest; tests moved to Thursday" reads as two points.
+function splitClauses(sentence: string): string[] {
+  return sentence
+    .split(/;\s+/)
+    .map((c) => c.trim())
+    .filter(Boolean)
+    .map((c, i) => (i === 0 ? c : c[0].toUpperCase() + c.slice(1)));
 }
 
 function splitSentences(text: string): string[] {
