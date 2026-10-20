@@ -16,8 +16,12 @@ prompt never needs to change.
   records a `no_change` run and stops. Most rest days end here after a few seconds.
 - **Something changed:** the run reads `get_overview` and then:
   - **adjusts the plan** for the next 7 days starting tomorrow, or further when your picked days reach past
-    them. It never touches today or past days, and it
+    them. It never touches past days, and it
     keeps plan entries you added or marked by hand (`set_plan` with `keep_app_entries`).
+  - **fixes today when it doesn't match your pick.** If today is a picked climbing day but today's plan
+    has no climbing session (or the other way round), `start_daily_review` returns `today_check`, counts
+    it as a reason to review, and the run rewrites today too. It leaves today alone once you've logged a
+    climbing session or added or marked today's entry yourself.
   - **plans around your climbing days.** Days you picked are fixed, and the days between them stay light.
     After the last fixed session, including a single one, it plans forward from the next day. With nothing
     picked, it suggests days from your load, readiness and availability, and titles those sessions

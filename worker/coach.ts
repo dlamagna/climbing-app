@@ -10,6 +10,7 @@ import { BadRequest, NotFound } from "./errors";
 import { CLIMB_DAYS_AHEAD, CLIMB_DAYS_TOPIC, NOT_THIS_WEEK, NO_CLIMBING, WEEK_TOPIC } from "./coachTopics";
 import { isIsoDate } from "./injury-dates";
 import { addDays, daysBetween, mondayOf } from "./load";
+import { isClimbingType } from "./typeGroups";
 
 export { CLIMB_DAYS_AHEAD, CLIMB_DAYS_TOPIC, NOT_THIS_WEEK, NO_CLIMBING, WEEK_TOPIC };
 
@@ -205,7 +206,9 @@ export async function setClimbingDays(db: D1Database, body: unknown, today: stri
         `INSERT INTO coach_questions (question, why, options, allow_text, multi, expires_on, topic, answer, answered_at)
          VALUES (?, ?, ?, 1, 1, ?, ?, ?, ?)
          ON CONFLICT (topic) DO UPDATE SET answer = excluded.answer, answered_at = excluded.answered_at,
-           skipped_at = NULL, closed_at = NULL`,
+           skipped_at = NULL, closed_at = NULL,
+           -- the window too, so a row first saved under a shorter window doesn't keep cutting days off (#75)
+           question = excluded.question, options = excluded.options, expires_on = excluded.expires_on`,
       )
       .bind(
         `${CLIMB_DAYS_QUESTION} (${window[0]} to ${window[window.length - 1]})`,
@@ -279,6 +282,57 @@ export function climbingDaysContext(
     note,
     answer: row.answer,
   };
+}
+
+// Today against the latest pick (#75). The review plans from tomorrow, so a day picked for today (or today
+// dropped from the picks) would otherwise never reach today's plan. Returns what is off, or null when today
+// fits the pick, isn't covered by it, already has a climbing session logged, or has a plan entry the climber
+// added by hand or set a status on (those are theirs).
+export interface TodayPlanEntry {
+  id: number;
+  type: string | null;
+  source: string | null;
+  status_override: string | null;
+}
+
+export interface TodayCheck {
+  issue: "picked_but_not_planned" | "planned_but_not_picked";
+  plan_ids: number[]; // today's entries the review may replace
+  message: string;
+}
+
+export function todayCheck(
+  today: string,
+  picked: ClimbingDaysContext | null,
+  entries: TodayPlanEntry[],
+  sessionTypes: string[],
+): TodayCheck | null {
+  if (!picked || today < picked.from || today > picked.to) return null;
+  if (sessionTypes.some(isClimbingType)) return null;
+  if (entries.some((e) => e.source === "app" || e.status_override)) return null;
+  const climbing = entries.some((e) => isClimbingType(e.type));
+  const plan_ids = entries.map((e) => e.id);
+  if (picked.days.includes(today) && !climbing)
+    return {
+      issue: "picked_but_not_planned",
+      plan_ids,
+      message: "Today is a picked climbing day but today's plan has no climbing session",
+    };
+  if (!picked.days.includes(today) && climbing)
+    return {
+      issue: "planned_but_not_picked",
+      plan_ids,
+      message: "Today's plan has a climbing session but today isn't a picked climbing day",
+    };
+  return null;
+}
+
+async function todayPlanAndSessions(db: D1Database, today: string) {
+  const [plan, sessions] = await Promise.all([
+    db.prepare("SELECT id, type, source, status_override FROM plan WHERE date = ?").bind(today).all<TodayPlanEntry>(),
+    db.prepare("SELECT type FROM sessions WHERE date = ?").bind(today).all<{ type: string }>(),
+  ]);
+  return { entries: plan.results ?? [], sessionTypes: (sessions.results ?? []).map((s) => s.type) };
 }
 
 export async function ensureWeeklyQuestion(db: D1Database, today: string): Promise<void> {
@@ -374,6 +428,7 @@ export function reviewDecision(
   lastRun: { seen_through: string } | null,
   c: ReviewChanges,
   plannedDaysAhead: number,
+  today: TodayCheck | null = null,
 ): { review_needed: boolean; reasons: string[] } {
   const reasons: string[] = [];
   if (!lastRun) reasons.push("first review");
@@ -389,6 +444,7 @@ export function reviewDecision(
   if (c.new_feedback.length) reasons.push(`${c.new_feedback.length} app feedback item${c.new_feedback.length === 1 ? "" : "s"} to triage`);
   if (c.answered_questions.length) reasons.push(`${c.answered_questions.length} question${c.answered_questions.length === 1 ? "" : "s"} answered`);
   if (plannedDaysAhead < MIN_PLANNED_DAYS_AHEAD) reasons.push(`only ${plannedDaysAhead} of the next 7 days planned`);
+  if (today) reasons.push(today.message.charAt(0).toLowerCase() + today.message.slice(1));
   return { review_needed: reasons.length > 0, reasons };
 }
 
@@ -419,7 +475,10 @@ the climber anything in chat, work only through these tools.
 4. Plan: keep the next 7 days filled, starting tomorrow, and further when climbing_days.to reaches past them
    (up to that day). Change only what the new data calls for; if the
    plan still fits, leave it. Rewrite with set_plan and keep_app_entries: true (entries the climber added or
-   set a status on stay). Never change today or past days. Put planned tests in expected_benchmarks.
+   set a status on stay). Never change past days, and change today only when today_check is set: then
+   rewrite today too, so it matches the pick ("picked_but_not_planned": a climbing session that suits
+   today's readiness; "planned_but_not_picked": rest or light non-climbing work instead). Put planned
+   tests in expected_benchmarks.
    Fixed sessions are the days in climbing_days.days and plan entries the climber added by hand (source
    'app') or set a status on. Plan around them:
    - Picked days: put the climbing sessions on them; days between them get rest, mobility or light
@@ -664,20 +723,24 @@ export async function startReview(db: D1Database, today: string) {
   const checked_at = nowStamp();
   await ensureWeeklyQuestion(db, today);
   const last = await lastRun(db);
-  const [changes, ahead, pending, picked] = await Promise.all([
+  const [changes, ahead, pending, picked, todayRows] = await Promise.all([
     changesSince(db, last, today),
     plannedDaysAhead(db, today),
     pendingQuestions(db, today),
     currentClimbingDays(db, today),
+    todayPlanAndSessions(db, today),
   ]);
-  const decision = reviewDecision(last, changes, ahead);
+  const climbing_days = climbingDaysContext(picked);
+  const today_check = todayCheck(today, climbing_days, todayRows.entries, todayRows.sessionTypes);
+  const decision = reviewDecision(last, changes, ahead, today_check);
   return {
     today,
     checked_at,
     last_run: last,
     ...decision,
     planned_days_ahead: ahead,
-    climbing_days: climbingDaysContext(picked),
+    climbing_days,
+    today_check,
     changes,
     open_questions: pending.open,
     instructions: REVIEW_INSTRUCTIONS,
