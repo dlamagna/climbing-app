@@ -230,3 +230,9 @@ export const typeLabel = (t: string | null) => SESSION_TYPES.find((s) => s.value
 
 // Groups for the History calendar and mix (rope / boulder / fingers / other); defined once in worker/typeGroups.ts.
 export { TYPE_GROUPS, type GroupKey, groupOf, groupInfo } from "../worker/typeGroups";
+
+// Which coach routines can be started from the app (#73).
+export interface CoachRoutines {
+  review: boolean;
+  worker: boolean;
+}

@@ -89,6 +89,24 @@ my climbing days** on Today.
 
 **Setup, the routine prompt, testing and troubleshooting: [docs/daily-coach-review.md](docs/daily-coach-review.md).**
 
+### Optional: run the review from the app
+
+Settings → Coach activity can start the coach review (and an issue-worker routine, if you have one) on
+demand. For each routine, open it at [claude.ai/code/routines](https://claude.ai/code/routines), add an
+**API** trigger and generate a token. The token is shown once, next to the trigger's URL. Store both as
+worker secrets:
+
+```sh
+npx wrangler secret put COACH_REVIEW_FIRE_URL     # https://api.anthropic.com/v1/claude_code/routines/trig_.../fire
+npx wrangler secret put COACH_REVIEW_FIRE_TOKEN   # sk-ant-oat01-...
+npx wrangler secret put ISSUE_WORKER_FIRE_URL     # optional, same for the issue worker
+npx wrangler secret put ISSUE_WORKER_FIRE_TOKEN
+```
+
+Without them, the buttons are hidden. Each token can only start its own routine. Runs started this way
+count against your Claude subscription like scheduled ones, and each routine can be started up to 30 times
+an hour.
+
 ## Your data stays private
 
 The code is public; the data isn't. Everything you log lives in your own D1 database in your own

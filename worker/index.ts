@@ -23,8 +23,9 @@ import {
 } from "./db";
 import { parseExpectedBenchmarks, sessionBenchmarkWrites } from "./benchmarks";
 import { addClimberNote, addFeedback, answerQuestion, coachActivity, listClimberNotes, listFeedback, setClimbingDays } from "./coach";
-import { BadRequest } from "./errors";
+import { BadRequest, NotFound } from "./errors";
 import { withIssueStatus } from "./github";
+import { fireRoutine, isRoutineName, routinesAvailable } from "./routines";
 import { buildExport, exportFilename, quoteIdent, toCsv, userTables } from "./export";
 import {
   type InjuryUpdate,
@@ -386,6 +387,15 @@ api.post("/coach/notes", async (c) => c.json({ id: await addClimberNote(c.env.DB
 
 // Coach activity for Settings (#64): last run, when the next one is expected, and past runs.
 api.get("/coach/runs", async (c) => c.json(await coachActivity(c.env.DB, Number(c.req.query("limit") ?? 30))));
+
+// Start the coach review or the issue worker now, from Settings → Coach activity (needs the routine's
+// API trigger secrets; see worker/routines.ts).
+api.get("/coach/routines", (c) => c.json(routinesAvailable(c.env)));
+api.post("/coach/routines/:name/run", async (c) => {
+  const name = c.req.param("name");
+  if (!isRoutineName(name)) throw new NotFound(`No routine "${name}"`);
+  return c.json(await fireRoutine(c.env, name));
+});
 
 // Climbing days picked with Today's "Plan my climbing days" button (#56): { days: [dates], note }.
 api.put("/coach/climbing-days", async (c) => {
