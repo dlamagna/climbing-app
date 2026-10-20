@@ -24,6 +24,7 @@ import {
 import { parseExpectedBenchmarks, sessionBenchmarkWrites } from "./benchmarks";
 import { addFeedback, answerQuestion, listFeedback, setClimbingDays } from "./coach";
 import { BadRequest } from "./errors";
+import { withIssueStatus } from "./github";
 import { buildExport, exportFilename, quoteIdent, toCsv, userTables } from "./export";
 import {
   type InjuryUpdate,
@@ -386,7 +387,7 @@ api.put("/coach/climbing-days", async (c) => {
 });
 
 // App feedback (#52): typed in the app, triaged into GitHub issues by the daily coach review.
-api.get("/feedback", async (c) => c.json(await listFeedback(c.env.DB)));
+api.get("/feedback", async (c) => c.json(await withIssueStatus(c.env, await listFeedback(c.env.DB))));
 api.post("/feedback", async (c) => c.json({ id: await addFeedback(c.env.DB, await c.req.json(), clientId(c)) }));
 
 api.get("/benchmarks", async (c) => {

@@ -148,6 +148,8 @@ export interface AppFeedback {
   status: "new" | "filed" | "duplicate" | "declined";
   issue_number: number | null;
   issue_url: string | null;
+  // Where the linked issue stands (#70); null when there's no issue or GitHub couldn't be reached.
+  issue_status: "open" | "merged" | "deploying" | "live" | "closed" | null;
   reply: string | null;
   created_at: string; // UTC timestamp
 }
