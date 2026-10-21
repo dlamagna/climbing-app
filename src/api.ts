@@ -45,18 +45,39 @@ async function throwIfFailed(res: Response) {
   }
 }
 
+// A request that got no answer in time (a connection that drops without failing). It is a TypeError like
+// fetch's own network errors, so every caller treats it as offline: a write is queued, a read falls back to
+// the cache. Without it a save on a dead connection would spin forever and never be queued.
+export class TimeoutError extends TypeError {}
+export const REQUEST_TIMEOUT_MS = 20_000;
+
+// Answers that mean the request didn't get through rather than that it was wrong (a gateway or the worker
+// briefly unavailable, rate limiting). Writes that get one are queued like offline writes and retried.
+const TRANSIENT_STATUS = [408, 429, 502, 503, 504];
+export const isTransient = (e: unknown) => e instanceof TypeError || (e instanceof HttpError && TRANSIENT_STATUS.includes(e.status));
+
 async function request<T>(method: string, path: string, body?: unknown, token = getToken(), key?: string): Promise<T> {
-  const res = await fetch(`/api${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${token ?? ""}`,
-      ...(body === undefined ? {} : { "Content-Type": "application/json" }),
-      ...(key ? { "Idempotency-Key": key } : {}),
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  await throwIfFailed(res);
-  return res.json() as Promise<T>;
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    const res = await fetch(`/api${path}`, {
+      method,
+      headers: {
+        Authorization: `Bearer ${token ?? ""}`,
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(key ? { "Idempotency-Key": key } : {}),
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: abort.signal,
+    });
+    await throwIfFailed(res);
+    return (await res.json()) as T;
+  } catch (e) {
+    if (abort.signal.aborted) throw new TimeoutError("Request timed out");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // Fetches a file the server sends as an attachment (the data export), with its filename.
@@ -94,7 +115,8 @@ interface Pending {
   key?: string; // missing on writes queued before idempotency keys existed
 }
 
-// Writes made without signal (gym basements) are queued and replayed on the next chance.
+// Writes made without signal (gym basements), or that time out or hit a transient server error, are queued
+// and replayed on the next chance (the app flushes on start, when back online and when reopened).
 // The same idempotency key goes with every attempt, so if the first one reached the server but its
 // response was lost, the replay doesn't insert a second copy. Pass a key to refer to the row later
 // (the timer addresses its auto-logged session by it).
@@ -107,7 +129,7 @@ export async function send<T = unknown>(
   try {
     return await request<T>(method, path, body, undefined, key);
   } catch (e) {
-    if (!(e instanceof TypeError)) throw e;
+    if (!isTransient(e)) throw e;
     save(OUTBOX_KEY, [...load<Pending[]>(OUTBOX_KEY, []), { method, path, body, key }]);
     return { queued: true };
   }
@@ -118,30 +140,38 @@ export const isQueued = (r: unknown): r is { queued: true } =>
 
 export const pendingCount = () => load<Pending[]>(OUTBOX_KEY, []).length;
 
+export interface FlushResult {
+  sent: number;
+  dropped: number; // rejected by the server, so removed from the queue
+  error: string | null; // the last rejection's message
+}
+
 let flushing = false;
-export async function flushOutbox(): Promise<number> {
-  if (flushing) return 0;
+export async function flushOutbox(): Promise<FlushResult> {
+  const result: FlushResult = { sent: 0, dropped: 0, error: null };
+  if (flushing) return result;
   flushing = true;
-  let sent = 0;
   try {
     const queue = load<Pending[]>(OUTBOX_KEY, []);
     while (queue.length) {
       const { method, path, body, key } = queue[0];
       try {
         await request(method, path, body, undefined, key);
+        result.sent++;
       } catch (e) {
-        if (e instanceof TypeError || e instanceof AuthError) break; // still offline / logged out: retry later
-        // Server rejected it; drop it rather than blocking everything behind it.
+        if (isTransient(e) || e instanceof AuthError) break; // still offline / logged out / server down: retry later
+        // Server rejected it; drop it rather than blocking everything behind it, and report it.
         console.warn("Dropping queued write", path, e);
+        result.dropped++;
+        result.error = (e as Error).message;
       }
       queue.shift();
       save(OUTBOX_KEY, queue);
-      sent++;
     }
   } finally {
     flushing = false;
   }
-  return sent;
+  return result;
 }
 
 export function useApi<T>(path: string | null) {

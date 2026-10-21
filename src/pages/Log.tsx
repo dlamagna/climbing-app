@@ -126,7 +126,8 @@ function SessionForm({ session, presetDate }: { session: Session | null; presetD
         afterSave(result, "#/today");
       }
     } catch (e) {
-      alert((e as Error).message);
+      // The form keeps what was entered, so the climber can fix it or try again.
+      alert(`Session not saved: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }

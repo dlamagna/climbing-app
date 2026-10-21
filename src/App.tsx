@@ -60,8 +60,10 @@ function usePath() {
 
 // Replays queued offline writes and keeps the server's idea of "today" in the phone's timezone.
 async function sync() {
-  const sent = await flushOutbox();
-  if (sent) toast(`Synced ${sent} offline ${sent === 1 ? "entry" : "entries"}`);
+  const { sent, dropped, error } = await flushOutbox();
+  const entries = (n: number) => `${n} offline ${n === 1 ? "entry" : "entries"}`;
+  if (dropped) toast(`${sent ? `Synced ${entries(sent)}, but ` : ""}${entries(dropped)} couldn't be saved: ${error}`, undefined, 10000);
+  else if (sent) toast(`Synced ${entries(sent)}`);
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const profile = await get<Record<string, string>>("/profile");
