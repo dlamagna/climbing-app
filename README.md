@@ -92,11 +92,11 @@ turned off on the Coach tab) or with **Plan my climbing days** on the Coach tab.
 
 ### Optional: run the review after each session, or from the app
 
-With the routines' API triggers set up, the coach review starts by itself about 30 minutes after you log
-a training session, and the issue worker (if you have one) starts once the review has finished. A hangboard
-run saved as a warm-up isn't a session, so it starts nothing. If you log several sessions close together,
-the review waits until 30 minutes after the last one. Coach → Coach activity shows when the next start is
-due and can also start either routine by hand.
+With the routines' API triggers set up, logging a training session starts the coach review straight away.
+When the review finishes, the issue worker (if you have one) starts too, but only when GitHub has open P0
+or P1 issues for it, and it's told to work through all of them in one run. A hangboard run counts once you
+tap Save and close with *Training session* picked; one saved as a warm-up starts nothing. Coach → Coach
+activity shows the last automatic start and can also start either routine by hand.
 
 For each routine, open it at [claude.ai/code/routines](https://claude.ai/code/routines), add an
 **API** trigger and generate a token. The token is shown once, next to the trigger's URL. Store both as
@@ -109,10 +109,10 @@ npx wrangler secret put ISSUE_WORKER_FIRE_URL     # optional, same for the issue
 npx wrangler secret put ISSUE_WORKER_FIRE_TOKEN
 ```
 
-Without them, the buttons are hidden and nothing starts automatically. The routines then need a schedule
-of their own. With them, the routines don't need a schedule: remove it, or they run on both. A cron
-trigger in `wrangler.jsonc` checks every 5 minutes, so a start can come up to 5 minutes late. Each token
-can only start its own routine. Runs started this way count against your Claude subscription like
+Without them, the buttons are hidden and nothing starts automatically, so the routines need a schedule of
+their own. With them, the routines don't need a schedule: remove it, or they run on both. The issue check
+uses `GITHUB_TOKEN`; without it the worker always starts after the review. Each token can only start its
+own routine. Runs started this way count against your Claude subscription like
 scheduled ones, and each routine can be started up to 30 times an hour.
 
 ## Your data stays private

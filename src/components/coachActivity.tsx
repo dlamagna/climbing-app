@@ -1,7 +1,7 @@
 // The Coach tab's coach activity (#64, #80): when the daily review last ran, when the next run is expected, and a
 // browsable history of past runs with their outcome, summary and changes. With the routines' API triggers
 // set up, the review and the issue worker can also be started from here (#73), and they start by themselves
-// about 30 minutes after a training session is logged (worker/autoStart.ts).
+// when a training session is logged (worker/autoStart.ts).
 import { useState } from "react";
 import { sendNow, toast, useApi } from "../api";
 import { nextRunLabel, stampLabel } from "../coachRuns";
@@ -90,28 +90,27 @@ function RunNow() {
 
 const ROUTINE_LABEL: Record<"review" | "worker", string> = { review: "Review", worker: "Issue worker" };
 
-// Next run and the automatic-start line, when logged sessions start the review.
+const STATUS_TAG: Record<NonNullable<AutoStart["last"]>["status"], string> = {
+  starting: "skipped",
+  started: "done",
+  failed: "skipped",
+  skipped: "skipped",
+};
+
+// What starts the review, and how the last automatic start went.
 function AutoInfo({ auto, today }: { auto: AutoStart; today: string }) {
   const last = auto.last;
   return (
     <>
-      <p className="small">
-        <span className="muted">Next run:</span>{" "}
-        {!auto.next_start
-          ? "After your next training session"
-          : Date.parse(auto.next_start) <= Date.now()
-            ? "Starting in the next few minutes"
-            : `Around ${stampLabel(auto.next_start, today)}`}
-      </p>
       <p className="muted small">
-        The review starts about {auto.delay_min} minutes after you log a training session (not a warm-up)
-        {auto.worker ? ", then the issue worker runs" : ""}.
+        The review starts when you log a training session (not a warm-up)
+        {auto.worker ? ", then the issue worker runs if there are open P0 or P1 issues" : ""}.
       </p>
       {last && (
         <p className="small">
           <span className="muted">Last automatic start:</span> {ROUTINE_LABEL[last.routine]} · {stampLabel(last.created_at, today)} ·{" "}
-          <span className={`tag status ${last.status === "started" ? "done" : "skipped"}`}>{last.status}</span>
-          {last.error && <span className="error"> {last.error}</span>}
+          <span className={`tag status ${STATUS_TAG[last.status]}`}>{last.status}</span>
+          {last.error && <span className={last.status === "failed" ? "error" : "muted"}> {last.error}</span>}
         </p>
       )}
     </>

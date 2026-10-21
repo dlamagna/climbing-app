@@ -1,11 +1,12 @@
-// Starting the coach review, then the issue worker, after a logged session: the real SQL on an in-memory
-// SQLite behind a minimal D1 shim, with Claude's fire endpoint stubbed. Made-up data only.
+// Starting the coach review, then the issue worker, when a session is logged: the real SQL on an in-memory
+// SQLite behind a minimal D1 shim, with Claude's fire endpoint and GitHub stubbed. Made-up data only.
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AUTO_DELAY_MIN, MAX_ATTEMPTS, WORKER_FALLBACK_MIN, autoStartStatus, checkAutoStarts, startFromApp } from "./autoStart";
+import { REVIEW_START_TEXT, TIMER_SETTLE_MIN, autoStartStatus, startAfterWrite, startFromApp } from "./autoStart";
 import type { Env } from "./db";
+import { workerIssueNumbers } from "./github";
 import { resetCooldowns } from "./routines";
 
 type Value = string | number | null;
@@ -25,10 +26,29 @@ const MIGRATIONS = join(import.meta.dirname, "..", "migrations");
 const REVIEW_URL = "https://api.anthropic.com/v1/claude_code/routines/trig_review1/fire";
 const WORKER_URL = "https://api.anthropic.com/v1/claude_code/routines/trig_worker1/fire";
 
+interface Item {
+  number: number;
+  title?: string;
+  body?: string | null;
+  user?: { login: string };
+  labels?: string[];
+  pr?: boolean;
+}
+const item = (i: Item) => ({
+  number: i.number,
+  title: i.title ?? `Item ${i.number}`,
+  body: i.body ?? null,
+  user: i.user ?? { login: "someowner" },
+  labels: (i.labels ?? []).map((name) => ({ name })),
+  ...(i.pr ? { pull_request: {} } : {}),
+});
+
 let sqlite: DatabaseSync;
 let env: Env;
 let fired: { url: string; text: string }[];
 let status: number;
+let openItems: ReturnType<typeof item>[];
+let githubDown: boolean;
 
 beforeEach(() => {
   sqlite = new DatabaseSync(":memory:");
@@ -39,11 +59,19 @@ beforeEach(() => {
     COACH_REVIEW_FIRE_TOKEN: "sk-ant-oat01-test-review",
     ISSUE_WORKER_FIRE_URL: WORKER_URL,
     ISSUE_WORKER_FIRE_TOKEN: "sk-ant-oat01-test-worker",
+    GITHUB_TOKEN: "github-test-token",
+    GITHUB_REPO: "someowner/somerepo",
+    GITHUB_ROADMAP_ISSUE: "1",
   } as unknown as Env;
   fired = [];
   status = 200;
+  openItems = [item({ number: 5, labels: ["bug", "priority: P1"] })];
+  githubDown = false;
   resetCooldowns();
   vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+    if (url.startsWith("https://api.github.com/")) {
+      return githubDown ? new Response("{}", { status: 503 }) : new Response(JSON.stringify(openItems));
+    }
     fired.push({ url, text: JSON.parse(String(init.body)).text });
     return new Response(JSON.stringify({ claude_code_session_url: `https://claude.ai/code/session_${fired.length}` }), { status });
   });
@@ -51,164 +79,212 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals());
 
 const at = (hhmm: string) => new Date(`2026-05-10T${hhmm}:00Z`);
-const logSession = (hhmm: string, type = "boulder") =>
+const logSession = (hhmm: string, clientId: string | null = null) =>
   sqlite
-    .prepare("INSERT INTO sessions (date, type, duration_min, rpe, created_at) VALUES ('2026-05-10', ?, 60, 7, ?)")
-    .run(type, `2026-05-10T${hhmm}:00Z`);
+    .prepare("INSERT INTO sessions (date, type, duration_min, rpe, client_id, created_at) VALUES ('2026-05-10', 'boulder', 60, 7, ?, ?)")
+    .run(clientId, `2026-05-10T${hhmm}:00Z`);
 const recordReview = (hhmm: string) =>
   sqlite
     .prepare("INSERT INTO coach_runs (outcome, seen_through, created_at) VALUES ('no_change', ?, ?)")
     .run(`2026-05-10T${hhmm}:00Z`, `2026-05-10T${hhmm}:00Z`);
-// Each check is a separate cron run, so the in-memory double-tap guard doesn't carry over.
-const check = (hhmm: string) => {
+// Each write is a separate request, so the in-memory double-tap guard doesn't carry over.
+const write = (hhmm: string, timerKey?: string) => {
   resetCooldowns();
-  return checkAutoStarts(env, at(hhmm));
+  return startAfterWrite(env, at(hhmm), timerKey);
 };
 const firedRoutines = () => fired.map((f) => (f.url === REVIEW_URL ? "review" : "worker"));
+const starts = () => sqlite.prepare("SELECT routine, session_id, status, error FROM routine_starts ORDER BY id").all();
 
-describe("checkAutoStarts", () => {
+describe("review", () => {
   it("does nothing without a logged session", async () => {
-    expect(await check("18:00")).toEqual([]);
+    expect(await write("18:00")).toEqual([]);
     expect(fired).toEqual([]);
   });
 
-  it("starts the review 30 minutes after a session, once", async () => {
+  it("starts as soon as a session is logged, once", async () => {
     logSession("17:00");
-    expect(await check("17:25")).toEqual([]);
-    const [start] = await check("17:30");
-    expect(start).toMatchObject({ routine: "review", started_by: "session", status: "started", session_logged_at: "2026-05-10T17:00:00Z" });
-    expect(start.session_url).toBe("https://claude.ai/code/session_1");
-    expect(fired[0].text).toContain(`${AUTO_DELAY_MIN} minutes after a training session`);
-    await check("17:35");
-    expect(firedRoutines()).toEqual(["review"]);
+    expect(await write("17:00")).toEqual(["review"]);
+    expect(fired[0]).toEqual({ url: REVIEW_URL, text: REVIEW_START_TEXT });
+    expect(await write("17:01")).toEqual([]);
+    expect(starts()).toEqual([{ routine: "review", session_id: 1, status: "started", error: null }]);
   });
 
-  it("waits for the last of sessions logged close together", async () => {
-    logSession("17:00");
-    logSession("17:20", "hangboard");
-    expect(await check("17:30")).toEqual([]);
-    await check("17:50");
-    expect(firedRoutines()).toEqual(["review"]);
-    expect(sqlite.prepare("SELECT session_logged_at FROM routine_starts").get()).toEqual({ session_logged_at: "2026-05-10T17:20:00Z" });
-  });
-
-  it("starts again for a session logged after the last review", async () => {
+  it("starts again for the next session", async () => {
     logSession("09:00");
-    await check("09:30");
-    recordReview("09:33");
-    await check("09:35"); // worker
+    await write("09:00");
     logSession("18:00");
-    await check("18:30");
-    expect(firedRoutines()).toEqual(["review", "worker", "review"]);
+    await write("18:00");
+    expect(firedRoutines()).toEqual(["review", "review"]);
   });
 
   it("ignores sessions logged long ago, e.g. right after deploying", async () => {
     logSession("01:00");
-    expect(await check("18:00")).toEqual([]);
+    expect(await write("18:00")).toEqual([]);
   });
 
   it("doesn't restart for an older session once the newest one is deleted", async () => {
     logSession("17:00");
     logSession("17:10");
-    await check("17:40");
-    sqlite.prepare("DELETE FROM sessions WHERE created_at = '2026-05-10T17:10:00Z'").run();
-    await check("17:45");
-    expect(firedRoutines()).toEqual(["review"]);
+    await write("17:10");
+    sqlite.prepare("DELETE FROM sessions WHERE id = 2").run();
+    expect(await write("17:11")).toEqual([]);
   });
 
-  it("starts the worker once the review has recorded its run", async () => {
-    logSession("17:00");
-    await check("17:30");
-    expect(await check("17:35")).toEqual([]); // review still running
-    recordReview("17:36");
-    const [w] = await check("17:40");
-    expect(w).toMatchObject({ routine: "worker", status: "started", session_logged_at: "2026-05-10T17:00:00Z" });
-    expect(fired[1].text).toContain("after the coach review");
-    await check("17:45");
-    expect(firedRoutines()).toEqual(["review", "worker"]);
+  it("waits for the timer's Save and close, since the run may still become a warm-up", async () => {
+    logSession("17:00", "hang-abc:session");
+    expect(await write("17:00")).toEqual([]); // the hang log insert
+    expect(await write("17:01", "hang-other")).toEqual([]); // another run's Save and close
+    expect(await write("17:01", "hang-abc")).toEqual(["review"]);
   });
 
-  it("starts the worker anyway when the review never records a run", async () => {
-    logSession("17:00");
-    await check("17:30");
-    expect(await check("18:25")).toEqual([]);
-    const [w] = await check(`18:${30 + WORKER_FALLBACK_MIN - 60}`);
-    expect(w.routine).toBe("worker");
+  it("counts a timer session without Save and close once it has settled", async () => {
+    logSession("17:00", "hang-abc:session");
+    expect(await write(`17:0${TIMER_SETTLE_MIN - 1}`)).toEqual([]);
+    expect(await write(`17:${TIMER_SETTLE_MIN}`)).toEqual(["review"]);
   });
 
-  it("doesn't count a review recorded before the automatic one started", async () => {
-    recordReview("17:10");
+  it("logs a failed start and leaves it to Run now", async () => {
+    status = 429;
     logSession("17:00");
-    await check("17:30");
-    expect(await check("17:35")).toEqual([]);
-  });
-
-  it("skips the worker when its trigger isn't set up", async () => {
-    env = { ...env, ISSUE_WORKER_FIRE_URL: undefined } as unknown as Env;
-    logSession("17:00");
-    await check("17:30");
-    recordReview("17:32");
-    await check("17:35");
-    expect(firedRoutines()).toEqual(["review"]);
+    await write("17:00");
+    await write("17:05");
+    expect(fired).toHaveLength(1);
+    expect(starts()).toEqual([{ routine: "review", session_id: 1, status: "failed", error: expect.stringMatching(/too often/) }]);
   });
 
   it("does nothing when the review's trigger isn't set up", async () => {
     env = { ...env, COACH_REVIEW_FIRE_TOKEN: undefined } as unknown as Env;
     logSession("17:00");
-    expect(await check("17:30")).toEqual([]);
+    expect(await write("17:00")).toEqual([]);
     expect(fired).toEqual([]);
   });
 
-  it("logs a failed start and retries a few times", async () => {
-    status = 429;
+  it("can't be started twice by writes at the same moment", async () => {
     logSession("17:00");
-    const [first] = await check("17:30");
-    expect(first).toMatchObject({ status: "failed", routine: "review" });
-    expect(first.error).toMatch(/too often/);
-    for (let i = 1; i < MAX_ATTEMPTS; i++) await check(`17:${30 + 5 * i}`);
-    await check("17:55");
-    expect(fired).toHaveLength(MAX_ATTEMPTS);
+    resetCooldowns();
+    const [a, b] = await Promise.all([startAfterWrite(env, at("17:00")), startAfterWrite(env, at("17:00"))]);
+    expect([...a, ...b]).toEqual(["review"]);
+  });
+});
+
+describe("worker", () => {
+  it("starts once the review has recorded its run, with the issues to do and no limit", async () => {
+    logSession("17:00");
+    await write("17:00");
+    expect(await write("17:02")).toEqual([]); // review still running
+    recordReview("17:04");
+    expect(await write("17:04")).toEqual(["worker"]); // record_coach_run's own write
+    expect(fired[1].url).toBe(WORKER_URL);
+    expect(fired[1].text).toContain("#5");
+    expect(fired[1].text).toContain("no per-run limit");
+    await write("17:10");
+    expect(firedRoutines()).toEqual(["review", "worker"]);
   });
 
-  it("recovers on a retry after a failure", async () => {
+  it("is skipped when there are no issues for it", async () => {
+    openItems = [item({ number: 6, labels: ["enhancement", "priority: P2", "backlog"] })];
+    logSession("17:00");
+    await write("17:00");
+    recordReview("17:04");
+    await write("17:04");
+    expect(firedRoutines()).toEqual(["review"]);
+    expect(starts()[1]).toEqual({ routine: "worker", session_id: 1, status: "skipped", error: "No open P0 or P1 issues to work on." });
+    await write("17:05");
+    expect(starts()).toHaveLength(2);
+  });
+
+  it("starts anyway when GitHub can't be checked", async () => {
+    githubDown = true;
+    logSession("17:00");
+    await write("17:00");
+    recordReview("17:04");
+    await write("17:04");
+    expect(firedRoutines()).toEqual(["review", "worker"]);
+    expect(fired[1].text).not.toContain("#");
+  });
+
+  it("starts without the check when no GitHub token is set", async () => {
+    env = { ...env, GITHUB_TOKEN: undefined } as unknown as Env;
+    openItems = [];
+    logSession("17:00");
+    await write("17:00");
+    recordReview("17:04");
+    await write("17:04");
+    expect(firedRoutines()).toEqual(["review", "worker"]);
+  });
+
+  it("doesn't follow a coach run recorded before the automatic review started", async () => {
+    recordReview("16:50");
+    logSession("17:00");
+    await write("17:00");
+    expect(await write("17:01")).toEqual([]);
+  });
+
+  it("doesn't follow a review that failed to start", async () => {
     status = 500;
     logSession("17:00");
-    await check("17:30");
+    await write("17:00");
     status = 200;
-    const [ok] = await check("17:35");
-    expect(ok.status).toBe("started");
-    await check("17:40");
-    expect(fired).toHaveLength(2);
+    recordReview("17:04");
+    expect(await write("17:04")).toEqual([]);
+  });
+
+  it("isn't started when its trigger isn't set up", async () => {
+    env = { ...env, ISSUE_WORKER_FIRE_URL: undefined } as unknown as Env;
+    logSession("17:00");
+    await write("17:00");
+    recordReview("17:04");
+    await write("17:04");
+    expect(firedRoutines()).toEqual(["review"]);
+  });
+});
+
+describe("workerIssueNumbers", () => {
+  it("follows the worker's own rules", () => {
+    const items = [
+      item({ number: 1, labels: ["priority: P0"] }), // the roadmap issue
+      item({ number: 2, labels: ["bug", "priority: P0"] }),
+      item({ number: 3, labels: ["priority: P1"], user: { login: "someone-else" } }),
+      item({ number: 4, labels: ["priority: P2"] }),
+      item({ number: 7, labels: ["priority: P1", "needs-owner"] }),
+      item({ number: 8, labels: ["priority: P1"] }), // has an open PR
+      item({ number: 9, labels: ["bug"] }),
+      item({ number: 10, labels: ["priority: P1", "enhancement"] }),
+      item({ number: 11, title: "Fix the thing", body: "Closes #8", pr: true, labels: ["priority: P1"] }),
+    ];
+    expect(workerIssueNumbers(items, "SomeOwner", 1)).toEqual([2, 10]);
   });
 });
 
 describe("autoStartStatus", () => {
   it("is off without the review's trigger", async () => {
     env = { ...env, COACH_REVIEW_FIRE_URL: undefined } as unknown as Env;
-    expect(await autoStartStatus(env, at("17:00"))).toMatchObject({ enabled: false, worker: false, next_start: null, last: null });
+    expect(await autoStartStatus(env)).toEqual({ enabled: false, worker: false, last: null });
   });
 
-  it("says when the waiting session's review is due, then what was started", async () => {
-    expect(await autoStartStatus(env, at("17:00"))).toMatchObject({ enabled: true, worker: true, delay_min: 30, next_start: null, last: null });
+  it("shows the newest automatic start", async () => {
+    expect(await autoStartStatus(env)).toEqual({ enabled: true, worker: true, last: null });
     logSession("17:00");
-    expect((await autoStartStatus(env, at("17:10"))).next_start).toBe("2026-05-10T17:30:00Z");
-    await check("17:30");
-    const s = await autoStartStatus(env, at("17:31"));
-    expect(s.next_start).toBeNull();
-    expect(s.last).toMatchObject({ routine: "review", status: "started" });
+    await write("17:00");
+    expect((await autoStartStatus(env)).last).toMatchObject({ routine: "review", status: "started", session_url: "https://claude.ai/code/session_1" });
   });
 });
 
 describe("startFromApp", () => {
   it("starts the routine and logs it as an app start, which doesn't count as following up a session", async () => {
-    logSession("17:00");
-    expect(await startFromApp(env, "review", at("17:05"))).toEqual({ session_url: "https://claude.ai/code/session_1" });
+    logSession("17:00", "hang-abc:session");
+    expect(await startFromApp(env, "review", at("17:01"))).toEqual({ session_url: "https://claude.ai/code/session_1" });
     expect(sqlite.prepare("SELECT routine, started_by, status FROM routine_starts").all()).toEqual([
       { routine: "review", started_by: "app", status: "started" },
     ]);
     expect(fired[0].text).toContain("Started from the app");
-    await check("17:30");
+    await write("17:02", "hang-abc");
     expect(firedRoutines()).toEqual(["review", "review"]);
+  });
+
+  it("tells a hand-started worker to do every issue", async () => {
+    await startFromApp(env, "worker", at("17:01"));
+    expect(fired[0].text).toContain("no per-run limit");
   });
 
   it("passes failures back without logging them", async () => {

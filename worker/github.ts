@@ -94,6 +94,45 @@ export async function listIssues(env: Env, state: "open" | "closed" | "all") {
     }));
 }
 
+// The issue worker's own selection rules (its routine prompt), so the app only starts it when it has work.
+export const WORKER_PRIORITIES = [priorityLabel("P0"), priorityLabel("P1")];
+export const WORKER_SKIP_LABELS = ["backlog", "needs-owner", "wontfix", "duplicate", "question"];
+
+interface OpenItem {
+  number: number;
+  title: string;
+  body: string | null;
+  user: { login: string } | null;
+  labels: { name: string }[];
+  pull_request?: unknown;
+}
+
+// Issues the worker would pick up from the open issues and PRs (the issues endpoint returns both): opened by
+// the repo owner, labelled P0 or P1, none of the skip labels, not the roadmap issue, and not mentioned as #N by
+// an open PR. Pure, for tests.
+export function workerIssueNumbers(items: OpenItem[], owner: string, roadmap: number | null): number[] {
+  const referenced = new Set(
+    items
+      .filter((i) => i.pull_request)
+      .flatMap((p) => [...`${p.title}\n${p.body ?? ""}`.matchAll(/#(\d+)\b/g)].map((m) => Number(m[1]))),
+  );
+  return items
+    .filter((i) => {
+      if (i.pull_request || i.number === roadmap || referenced.has(i.number)) return false;
+      if (i.user?.login.toLowerCase() !== owner.toLowerCase()) return false;
+      const labels = i.labels.map((l) => l.name);
+      return labels.some((l) => WORKER_PRIORITIES.includes(l)) && !labels.some((l) => WORKER_SKIP_LABELS.includes(l));
+    })
+    .map((i) => i.number)
+    .sort((a, b) => a - b);
+}
+
+export async function workerIssues(env: Env): Promise<number[]> {
+  const items = await github<OpenItem[]>(env, "/issues?state=open&per_page=100");
+  const roadmap = Number(env.GITHUB_ROADMAP_ISSUE);
+  return workerIssueNumbers(items, env.GITHUB_REPO!.split("/")[0], Number.isInteger(roadmap) && roadmap > 0 ? roadmap : null);
+}
+
 export async function listMilestones(env: Env) {
   const ms = await github<{ number: number; title: string; description: string | null }[]>(env, "/milestones?state=open&per_page=100");
   return ms.map((m) => ({ number: m.number, title: m.title, description: m.description }));

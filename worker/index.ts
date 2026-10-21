@@ -26,7 +26,7 @@ import { addClimberNote, addFeedback, answerQuestion, coachActivity, deleteFeedb
 import { BadRequest, NotFound } from "./errors";
 import { withIssueStatus } from "./github";
 import { isRoutineName, routinesAvailable } from "./routines";
-import { autoStartStatus, checkAutoStarts, startFromApp } from "./autoStart";
+import { autoStartStatus, startAfterWrite, startFromApp } from "./autoStart";
 import { buildExport, exportFilename, quoteIdent, toCsv, userTables } from "./export";
 import {
   type InjuryUpdate,
@@ -126,19 +126,40 @@ app.onError((err, c) => {
   return c.json({ error: "Internal error" }, 500);
 });
 
+// After a successful write: a newly logged session starts the coach review, and the review's
+// record_coach_run starts the issue worker (worker/autoStart.ts). Runs after the response, so it never slows
+// down or fails the write. The timer's Save and close names its run, so that session starts it straight away.
+const TIMER_DONE = /\/hangs\/by-key\/([^/]+)\/done$/;
+const afterWrite = (c: C) => {
+  if (c.req.method === "GET" || !c.res.ok) return;
+  const timerKey = c.req.path.match(TIMER_DONE)?.[1];
+  c.executionCtx.waitUntil(
+    startAfterWrite(c.env, new Date(), timerKey ? decodeURIComponent(timerKey) : undefined).catch((e) =>
+      console.error("auto start failed", e),
+    ),
+  );
+};
+
 // MCP: the token can go in the path (claude.ai connectors only take a URL) or as a bearer header.
-app.all("/mcp/:token", async (c) =>
-  tokenMatches(c.req.param("token"), c.env.MCP_TOKEN) ? handleMcp(c.req.raw, c.env) : c.text("Unauthorized", 401),
-);
-app.all("/mcp", async (c) =>
-  tokenMatches(bearer(c), c.env.MCP_TOKEN) ? handleMcp(c.req.raw, c.env) : c.text("Unauthorized", 401),
-);
+app.all("/mcp/:token", async (c) => {
+  if (!tokenMatches(c.req.param("token"), c.env.MCP_TOKEN)) return c.text("Unauthorized", 401);
+  c.res = await handleMcp(c.req.raw, c.env);
+  afterWrite(c);
+  return c.res;
+});
+app.all("/mcp", async (c) => {
+  if (!tokenMatches(bearer(c), c.env.MCP_TOKEN)) return c.text("Unauthorized", 401);
+  c.res = await handleMcp(c.req.raw, c.env);
+  afterWrite(c);
+  return c.res;
+});
 
 const api = new Hono<{ Bindings: Env }>();
 
 api.use("*", async (c: C, next: Next) => {
   if (!tokenMatches(bearer(c), c.env.APP_TOKEN)) return c.json({ error: "Unauthorized" }, 401);
   await next();
+  afterWrite(c);
 });
 
 api.get("/today", async (c) => c.json(await todayView(c.env.DB, dateParam(c, "date"))));
@@ -254,6 +275,10 @@ api.delete("/hangs/by-key/:key/session", async (c) => {
 });
 
 // The finished screen's warm-up / training choice (#50): {warmup: true} or {warmup: false, duration_min}.
+// Save and close on the timer's finished screen, for a run kept as a training session: the climber is done
+// with it, so its session can start the coach review (handled after the response, in afterWrite).
+api.post("/hangs/by-key/:key/done", (c) => c.json({ ok: true }));
+
 api.put("/hangs/by-key/:key/warmup", async (c) => {
   const { warmup, duration_min } = await c.req.json();
   if (typeof warmup !== "boolean") throw new BadRequest("warmup must be true or false");
@@ -491,14 +516,4 @@ api.get("/export", async (c) => {
 
 app.route("/api", api);
 
-export default {
-  fetch: app.fetch,
-  // Cron trigger (wrangler.jsonc): start the coach review and issue worker after a logged session.
-  scheduled(_controller, env, ctx) {
-    ctx.waitUntil(
-      checkAutoStarts(env).then((starts) => {
-        for (const s of starts) console.log(`auto start: ${s.routine} ${s.status}${s.error ? `: ${s.error}` : ""}`);
-      }),
-    );
-  },
-} satisfies ExportedHandler<Env>;
+export default app;

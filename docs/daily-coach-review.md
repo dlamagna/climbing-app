@@ -82,7 +82,7 @@ Run `/schedule` in Claude Code, choose *Create a routine*, and give it:
 | Setting | Value |
 |---|---|
 | Name | e.g. *Climbing daily coach review* |
-| Schedule | Either none, with an API trigger so it [starts after each logged session](../README.md#optional-run-the-review-after-each-session-or-from-the-app), or daily after you usually train. A schedule is in **UTC**: for 22:30 at UTC+1, use `30 21 * * *`. Summer time shifts it by an hour, so pick the time for the part of the year you care about most |
+| Schedule | Either none, with an API trigger so it [starts when you log a session](../README.md#optional-run-the-review-after-each-session-or-from-the-app), or daily after you usually train. A schedule is in **UTC**: for 22:30 at UTC+1, use `30 21 * * *`. Summer time shifts it by an hour, so pick the time for the part of the year you care about most |
 | Model | A Sonnet model is plenty. The run reads data and adjusts a plan |
 | Environment | Any cloud environment |
 | Repository | Your fork of this repo. Routines need a checkout, but the run doesn't change it |
