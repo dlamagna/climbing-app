@@ -10,6 +10,7 @@ import { BadRequest, NotFound } from "./errors";
 import { CLIMB_DAYS_AHEAD, CLIMB_DAYS_TOPIC, NOT_THIS_WEEK, NO_CLIMBING, WEEK_TOPIC } from "./coachTopics";
 import { isIsoDate } from "./injury-dates";
 import { addDays, daysBetween, mondayOf } from "./load";
+import { PRIORITIES, PRIORITY_TEXT, type Priority } from "./github";
 import { isClimbingType } from "./typeGroups";
 
 export { CLIMB_DAYS_AHEAD, CLIMB_DAYS_TOPIC, NOT_THIS_WEEK, NO_CLIMBING, WEEK_TOPIC };
@@ -370,6 +371,7 @@ export interface FeedbackRow {
   id: number;
   text: string;
   status: "new" | FeedbackOutcome;
+  priority: Priority | null; // picked in the app (#68); null = left to the review
   issue_number: number | null;
   issue_url: string | null;
   reply: string | null;
@@ -390,6 +392,14 @@ export const parseClimberNote = (body: unknown): string =>
 
 export const parseFeedback = (body: unknown): string =>
   text(((body ?? {}) as Record<string, unknown>).text, "feedback", MAX_FEEDBACK, true)!;
+
+// The priority picked in the app's feedback form (#68). Missing or null = not picked: the review decides.
+export function parseFeedbackPriority(body: unknown): Priority | null {
+  const p = ((body ?? {}) as Record<string, unknown>).priority;
+  if (p === undefined || p === null) return null;
+  if (!PRIORITIES.includes(p as Priority)) throw new BadRequest(`priority must be one of ${PRIORITIES.join(", ")}`);
+  return p as Priority;
+}
 
 export interface FeedbackResolution {
   status: FeedbackOutcome;
@@ -427,7 +437,7 @@ export interface ReviewChanges {
   plan_entries_added_by_hand: { id: number; date: string; title: string }[];
   answered_questions: Question[];
   skipped_questions: Question[];
-  new_feedback: Pick<FeedbackRow, "id" | "text" | "created_at">[];
+  new_feedback: Pick<FeedbackRow, "id" | "text" | "priority" | "created_at">[];
   notes_from_climber: ClimberNote[];
   checkins: number;
   benchmarks: number;
@@ -526,13 +536,15 @@ the climber anything in chat, work only through these tools.
 7. App feedback (changes.new_feedback, typed by the climber in the app about the app itself): decide for each
    one. A real bug or a useful idea: call list_issues; if an open issue already covers it, resolve_feedback
    "duplicate" with that issue_number (and say so in the reply). Otherwise file it with report_issue: labels
-   (bug / enhancement / ...), a priority (P0 = broken or blocking daily use, P1 = worth doing soon, P2 = nice
-   to have), a milestone when one fits (it is then listed in the roadmap), then resolve_feedback "filed" with
-   the issue number and url. Not actionable, unclear or not about the app: resolve_feedback "declined" with a
-   short reply (training information in it still counts as input for the plan). The repo is PUBLIC: write
-   the issue in general terms, never quote the feedback, and leave out anything personal (training data,
-   health, places, dates, trips, names, devices). If report_issue isn't available, leave the feedback as it is
-   and say so in the summary.
+   (bug / enhancement / ...), a priority, a milestone when one fits (it is then listed in the roadmap), then
+   resolve_feedback "filed" with the issue number and url. The priority: use the one the climber picked
+   (the item's priority) as it is, don't change it. Only when it is null, choose it yourself. ${PRIORITY_TEXT}.
+   report_issue gives a P2 issue the backlog label and lists it under the roadmap's backlog section.
+   Not actionable, unclear or not about the app: resolve_feedback "declined" with a short reply (training
+   information in it still counts as input for the plan). The repo is PUBLIC: write the issue in general
+   terms, never quote the feedback, and leave out anything personal (training data, health, places, dates,
+   trips, names, devices). If report_issue isn't available, leave the feedback as it is and say so in the
+   summary.
 
 8. Finish with record_coach_run: outcome "updated" if you changed anything (plan, note, profile, questions,
    feedback), else "no_change"; a one or two line summary the climber reads in the app ("Moved Thursday's board session
@@ -706,7 +718,7 @@ export async function changesSince(
     ),
     all<QuestionRow>(db, "SELECT * FROM coach_questions WHERE closed_at IS NULL AND answered_at IS NOT NULL ORDER BY id"),
     all<QuestionRow>(db, "SELECT * FROM coach_questions WHERE closed_at IS NULL AND skipped_at IS NOT NULL ORDER BY id"),
-    all<ReviewChanges["new_feedback"][number]>(db, "SELECT id, text, created_at FROM app_feedback WHERE status = 'new' ORDER BY id"),
+    all<ReviewChanges["new_feedback"][number]>(db, "SELECT id, text, priority, created_at FROM app_feedback WHERE status = 'new' ORDER BY id"),
     all<ClimberNote>(db, "SELECT id, text, created_at FROM climber_notes WHERE created_at >= ? ORDER BY id", s),
     db.prepare("SELECT COUNT(*) AS n FROM checkins WHERE updated_at >= ?").bind(s).first<{ n: number }>(),
     db.prepare("SELECT COUNT(*) AS n FROM benchmarks WHERE created_at >= ?").bind(s).first<{ n: number }>(),
@@ -730,7 +742,7 @@ export async function changesSince(
 export const listFeedback = (db: D1Database) =>
   all<FeedbackRow>(
     db,
-    "SELECT id, text, status, issue_number, issue_url, reply, handled_at, created_at FROM app_feedback ORDER BY id DESC LIMIT 50",
+    "SELECT id, text, status, priority, issue_number, issue_url, reply, handled_at, created_at FROM app_feedback ORDER BY id DESC LIMIT 50",
   );
 
 // The climber's notes to the coach, newest first, for the app.
@@ -751,9 +763,10 @@ export async function addClimberNote(db: D1Database, body: unknown, clientId: st
 // clientId makes a replayed offline submit return the first row instead of adding a copy.
 export async function addFeedback(db: D1Database, body: unknown, clientId: string | null): Promise<number> {
   const t = parseFeedback(body);
+  const priority = parseFeedbackPriority(body);
   const row = await db
-    .prepare("INSERT INTO app_feedback (text, client_id) VALUES (?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id")
-    .bind(t, clientId)
+    .prepare("INSERT INTO app_feedback (text, priority, client_id) VALUES (?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id")
+    .bind(t, priority, clientId)
     .first<{ id: number }>();
   if (row) return row.id;
   return (await db.prepare("SELECT id FROM app_feedback WHERE client_id = ?").bind(clientId).first<{ id: number }>())!.id;

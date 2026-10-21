@@ -311,7 +311,7 @@ describe("reviewDecision", () => {
       ],
       profile_keys: ["goal"],
       answered_questions: [{} as never],
-      new_feedback: [{ id: 1, text: "x", created_at: "" }],
+      new_feedback: [{ id: 1, text: "x", priority: null, created_at: "" }],
       notes_from_climber: [{ id: 1, text: "y", created_at: "" }, { id: 2, text: "z", created_at: "" }],
     };
     expect(reviewDecision(last, c, 2).reasons).toEqual([
@@ -553,14 +553,14 @@ describe("runs and what changed", () => {
     exec("INSERT INTO plan (date, title, source, created_at) VALUES ('2026-05-12', 'By hand', 'app', '2026-05-10T07:00:00Z')");
     exec("INSERT INTO plan (date, title, source, created_at) VALUES ('2026-05-13', 'Coach', 'coach', '2026-05-10T07:00:00Z')");
     exec("INSERT INTO checkins (date, updated_at) VALUES ('2026-05-10', '2026-05-10T07:00:00Z')");
-    exec("INSERT INTO app_feedback (text) VALUES ('The timer is too quiet')");
+    exec("INSERT INTO app_feedback (text, priority) VALUES ('The timer is too quiet', 'P1')");
     exec("INSERT INTO app_feedback (text, status) VALUES ('old one', 'filed')");
 
     const c = await changesSince(db, last, TODAY);
     expect(c.sessions.map((s) => [s.type, s.edited])).toEqual([["lead", true], ["board", false]]);
     expect(c.profile_keys).toEqual(["availability"]);
     expect(c.plan_entries_added_by_hand.map((p) => p.title)).toEqual(["By hand"]);
-    expect(c.new_feedback.map((f) => f.text)).toEqual(["The timer is too quiet"]);
+    expect(c.new_feedback.map((f) => [f.text, f.priority])).toEqual([["The timer is too quiet", "P1"]]);
     expect(c.checkins).toBe(1);
   });
 
@@ -631,6 +631,19 @@ describe("app feedback", () => {
     await addFeedback(db, { text: "Second" }, null);
     expect((await listFeedback(db)).map((f) => [f.text, f.status])).toEqual([["Second", "new"], ["Bigger buttons please", "new"]]);
     await expect(addFeedback(db, { text: "  " }, null)).rejects.toThrow(/feedback is required/);
+  });
+
+  it("stores the priority picked in the app, null when none was picked (#68)", async () => {
+    await addFeedback(db, { text: "Louder beep", priority: "P2" }, null);
+    await addFeedback(db, { text: "No pick", priority: null }, null);
+    await addFeedback(db, { text: "Old client" }, null);
+    expect((await listFeedback(db)).map((f) => [f.text, f.priority])).toEqual([
+      ["Old client", null],
+      ["No pick", null],
+      ["Louder beep", "P2"],
+    ]);
+    await expect(addFeedback(db, { text: "x", priority: "P3" }, null)).rejects.toThrow(/priority must be one of P0, P1, P2/);
+    await expect(addFeedback(db, { text: "x", priority: 1 }, null)).rejects.toThrow(/priority must be/);
   });
 
   it("edits feedback until the coach has handled it, and deletes it", async () => {

@@ -13,6 +13,9 @@ const ROADMAP = [
   "### v2 - Later",
   "- [ ] #7",
   "",
+  "### Backlog",
+  "- [ ] #9",
+  "",
   "Ideas welcome: open an issue.",
   "",
   "---",
@@ -27,7 +30,7 @@ describe("roadmapWithIssue", () => {
 
   it("puts issues without a known milestone in a new inbox section before the trailing text", () => {
     const out = roadmapWithIssue(ROADMAP, 61, null);
-    expect(out).toContain(`- [ ] #7\n\n${INBOX_HEADING}\n- [ ] #61\n\nIdeas welcome`);
+    expect(out).toContain(`- [ ] #9\n\n${INBOX_HEADING}\n- [ ] #61\n\nIdeas welcome`);
     expect(roadmapWithIssue(ROADMAP, 61, "v9 - Nope")).toBe(out);
     // and reuses it next time
     expect(roadmapWithIssue(out, 62, null)).toContain(`${INBOX_HEADING}\n- [ ] #61\n- [ ] #62\n`);
@@ -74,11 +77,20 @@ describe("createIssue", () => {
 
   it("files with priority label and milestone, then lists it in the roadmap", async () => {
     mockGithub();
-    const r = await createIssue(env, "Louder timer", "body", { labels: ["enhancement", "not-a-label"], priority: "P2", milestone: "v2 - later" });
+    const r = await createIssue(env, "Louder timer", "body", { labels: ["enhancement", "not-a-label"], priority: "P1", milestone: "v2 - later" });
     expect(r).toEqual({ number: 60, url: "https://github.com/o/r/issues/60", roadmap: "added to #14" });
     const post = calls.find((c) => c.path === "/issues")!;
-    expect(post.body).toMatchObject({ title: "Louder timer", labels: ["enhancement", "priority: P2"], milestone: 2 });
+    expect(post.body).toMatchObject({ title: "Louder timer", labels: ["enhancement", "priority: P1"], milestone: 2 });
     expect(roadmap).toContain("- [ ] #7\n- [ ] #60\n");
+  });
+
+  it("puts a P2 issue in the backlog: backlog label and the roadmap's backlog section (#68)", async () => {
+    mockGithub();
+    await createIssue(env, "Louder timer", "body", { labels: ["enhancement"], priority: "P2", milestone: "v2 - later" });
+    const post = calls.find((c) => c.path === "/issues")!;
+    expect(post.body).toMatchObject({ labels: ["enhancement", "priority: P2", "backlog"], milestone: 2 });
+    expect(roadmap).toContain("### Backlog\n- [ ] #9\n- [ ] #60\n");
+    expect(roadmap).not.toContain("- [ ] #7\n- [ ] #60");
   });
 
   it("rejects an unknown milestone before filing anything", async () => {

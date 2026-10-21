@@ -185,7 +185,8 @@ If report_issue is available, it files issues on the app's own GitHub repo: feat
 this app, never training notes or personal data (the repo is public). Call list_issues first to avoid
 duplicates, and write the issue so a developer can act on it. Give it a priority (${PRIORITY_TEXT}) and a
 milestone when one fits; it is added to the roadmap issue. App feedback the climber typed in the app arrives
-in start_daily_review's changes.new_feedback; record what you did with each one with resolve_feedback.`;
+in start_daily_review's changes.new_feedback, with the priority the climber picked (null = not picked, choose
+one); record what you did with each one with resolve_feedback.`;
 
 function readOnlySql(sql: string): string {
   const s = sql.trim().replace(/;\s*$/, "");
@@ -475,7 +476,7 @@ const TOOLS: Tool[] = [
         title: { type: "string", description: "Short and specific, e.g. 'Rest timer should vibrate on Android'" },
         body: { type: "string", description: "Markdown: what and why, and where in the app if known" },
         labels: { type: "array", items: { type: "string", enum: ISSUE_LABELS } },
-        priority: { type: "string", enum: PRIORITIES, description: `Adds a priority label: ${PRIORITY_TEXT}` },
+        priority: { type: "string", enum: PRIORITIES, description: `Adds a priority label: ${PRIORITY_TEXT}. P2 also adds the backlog label and lists it under the roadmap's backlog section` },
         milestone: { type: "string", description: "Title of an open milestone (from list_issues), e.g. for when it should be done" },
         add_to_roadmap: { type: "boolean", default: true, description: "List it in the pinned roadmap issue, under its milestone's section" },
       },

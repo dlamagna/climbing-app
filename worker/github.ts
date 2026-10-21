@@ -9,8 +9,14 @@ export const ISSUE_LABELS = ["enhancement", "bug", "testing", "infra", "health-d
 // Priority labels ("priority: P1"), also pre-created in the repo.
 export const PRIORITIES = ["P0", "P1", "P2"] as const;
 export type Priority = (typeof PRIORITIES)[number];
-export const PRIORITY_TEXT = "P0 = broken or blocking daily use, P1 = worth doing soon, P2 = nice to have";
+// The same meanings as the app's feedback form (#68): P1 issues are picked up by the nightly development run.
+export const PRIORITY_TEXT =
+  "P0 = broken or blocking daily use, P1 = worth doing soon (picked up by the nightly development run), P2 = backlog";
 export const priorityLabel = (p: Priority) => `priority: ${p}`;
+
+// P2 issues also get this label (pre-created in the repo) and go under the roadmap's BACKLOG_SECTION.
+export const BACKLOG_LABEL = "backlog";
+export const BACKLOG_SECTION = "Backlog";
 
 // The pinned roadmap issue lists every issue as a "- [ ] #N" line under a "### <milestone>" heading
 // (GITHUB_ROADMAP_ISSUE, optional). Issues with no milestone go under INBOX_HEADING.
@@ -109,6 +115,8 @@ export async function createIssue(env: Env, title: string, body: string, opts: I
   }
   const labels = (opts.labels ?? []).filter((l) => ISSUE_LABELS.includes(l));
   if (opts.priority) labels.push(priorityLabel(opts.priority));
+  const backlog = opts.priority === "P2";
+  if (backlog) labels.push(BACKLOG_LABEL);
   const issue = await github<Issue>(env, "/issues", {
     method: "POST",
     body: JSON.stringify({
@@ -123,7 +131,7 @@ export async function createIssue(env: Env, title: string, body: string, opts: I
   if (opts.addToRoadmap !== false && Number.isInteger(roadmap) && roadmap > 0) {
     try {
       const current = await github<{ body: string | null }>(env, `/issues/${roadmap}`);
-      const next = roadmapWithIssue(current.body ?? "", issue.number, milestone?.title ?? null);
+      const next = roadmapWithIssue(current.body ?? "", issue.number, backlog ? BACKLOG_SECTION : (milestone?.title ?? null));
       if (next !== current.body) await github(env, `/issues/${roadmap}`, { method: "PATCH", body: JSON.stringify({ body: next }) });
       result.roadmap = `added to #${roadmap}`;
     } catch (e) {

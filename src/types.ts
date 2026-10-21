@@ -150,10 +150,13 @@ export interface CoachActivity {
   runs: CoachRun[]; // newest first
 }
 
+export type FeedbackPriority = "P0" | "P1" | "P2";
+
 export interface AppFeedback {
   id: number;
   text: string;
   status: "new" | "filed" | "duplicate" | "declined";
+  priority: FeedbackPriority | null; // picked when sending (#68); null = left to the coach review
   issue_number: number | null;
   issue_url: string | null;
   // Where the linked issue stands (#70); null when there's no issue or GitHub couldn't be reached.
