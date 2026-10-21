@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeSeconds, buildPhases, sessionMinutes, totalSeconds } from "./timer";
+import { activeSeconds, buildPhases, doneMessage, sessionMinutes, totalSeconds } from "./timer";
 import type { Preset } from "./types";
 
 const preset: Preset = {
@@ -124,5 +124,19 @@ describe("sessionMinutes", () => {
     expect(sessionMinutes(29)).toBe(1);
     expect(sessionMinutes(150)).toBe(3);
     expect(sessionMinutes(14 * 60 + 20)).toBe(14);
+  });
+});
+
+describe("doneMessage (#83)", () => {
+  it("confirms what was stored, and says when it will sync later", () => {
+    expect(doneMessage("saved", "warmup", 12)).toBe("Saved as a warm-up for today's climbing");
+    expect(doneMessage("saved", "training", 12)).toBe("Saved as a 12 min hangboard session");
+    expect(doneMessage("queued", "training", 5)).toBe("Saved as a 5 min hangboard session offline - will sync later");
+    expect(doneMessage("skipped", "training", 1)).toBe("Nothing saved - no hangs completed");
+  });
+
+  it("has no confirmation while the run isn't stored", () => {
+    expect(doneMessage("error", "warmup", 3)).toBeNull();
+    expect(doneMessage("saving", "training", 3)).toBeNull();
   });
 });
