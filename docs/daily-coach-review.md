@@ -59,7 +59,7 @@ picked and doesn't change it:
 | Priority | Meaning | What happens |
 |---|---|---|
 | P0 | Blocks daily use | Filed as P0 in the next review |
-| P1 | Worth doing soon | Filed as P1. A nightly development run, if you set one up, works on open P0 and P1 issues (P0 first) |
+| P1 | Worth doing soon | Filed as P1. The issue worker, if you set one up, works on all open P0 and P1 issues (P0 first) after the next review |
 | P2 | Nice to have | Filed as P2 with the `backlog` label, and listed under the roadmap issue's *Backlog* section |
 | none | - | The review picks the priority itself, as before |
 

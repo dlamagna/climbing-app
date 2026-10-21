@@ -654,7 +654,8 @@ export const lastRun = async (db: D1Database) =>
 export const lastUpdate = async (db: D1Database) =>
   decodeRun(await db.prepare("SELECT * FROM coach_runs WHERE outcome = 'updated' ORDER BY id DESC LIMIT 1").first());
 
-// The review runs once a day (a scheduled routine outside the app, so its exact schedule isn't stored here).
+// Without automatic starts the review runs on a schedule, about once a day (a routine outside the app, so its
+// exact schedule isn't stored here).
 export const RUN_INTERVAL_HOURS = 24;
 export const MAX_RUN_HISTORY = 100;
 
