@@ -19,6 +19,11 @@
 			"/.well-known/*"
 		]
 	},
+	// Every 5 minutes: start the coach review ~30 min after a training session is logged, then the issue
+	// worker (worker/autoStart.ts). Does nothing until the routines' API trigger secrets are set.
+	"triggers": {
+		"crons": ["*/5 * * * *"]
+	},
 	"vars": {
 		// Repo the optional report_issue / list_issues MCP tools write to (needs the GITHUB_TOKEN secret).
 		"GITHUB_REPO": "dlamagna/climbing-app",

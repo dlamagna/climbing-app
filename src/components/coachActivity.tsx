@@ -1,11 +1,12 @@
 // The Coach tab's coach activity (#64, #80): when the daily review last ran, when the next run is expected, and a
 // browsable history of past runs with their outcome, summary and changes. With the routines' API triggers
-// set up, the review and the issue worker can also be started from here (#73).
+// set up, the review and the issue worker can also be started from here (#73), and they start by themselves
+// about 30 minutes after a training session is logged (worker/autoStart.ts).
 import { useState } from "react";
 import { sendNow, toast, useApi } from "../api";
 import { nextRunLabel, stampLabel } from "../coachRuns";
 import { localToday } from "../dates";
-import type { CoachActivity as Activity, CoachRoutines, CoachRun } from "../types";
+import type { CoachActivity as Activity, AutoStart, CoachRoutines, CoachRun } from "../types";
 import { StepList } from "./StepList";
 import { Card } from "./ui";
 
@@ -32,7 +33,7 @@ function RunItem({ run, today }: { run: CoachRun; today: string }) {
 }
 
 const RUNNERS: { name: keyof CoachRoutines; label: string; confirm: string }[] = [
-  { name: "review", label: "Run review now", confirm: "Start the daily coach review now?" },
+  { name: "review", label: "Run review now", confirm: "Start the coach review now?" },
   {
     name: "worker",
     label: "Run issue worker now",
@@ -87,6 +88,36 @@ function RunNow() {
   );
 }
 
+const ROUTINE_LABEL: Record<"review" | "worker", string> = { review: "Review", worker: "Issue worker" };
+
+// Next run and the automatic-start line, when logged sessions start the review.
+function AutoInfo({ auto, today }: { auto: AutoStart; today: string }) {
+  const last = auto.last;
+  return (
+    <>
+      <p className="small">
+        <span className="muted">Next run:</span>{" "}
+        {!auto.next_start
+          ? "After your next training session"
+          : Date.parse(auto.next_start) <= Date.now()
+            ? "Starting in the next few minutes"
+            : `Around ${stampLabel(auto.next_start, today)}`}
+      </p>
+      <p className="muted small">
+        The review starts about {auto.delay_min} minutes after you log a training session (not a warm-up)
+        {auto.worker ? ", then the issue worker runs" : ""}.
+      </p>
+      {last && (
+        <p className="small">
+          <span className="muted">Last automatic start:</span> {ROUTINE_LABEL[last.routine]} · {stampLabel(last.created_at, today)} ·{" "}
+          <span className={`tag status ${last.status === "started" ? "done" : "skipped"}`}>{last.status}</span>
+          {last.error && <span className="error"> {last.error}</span>}
+        </p>
+      )}
+    </>
+  );
+}
+
 export function CoachActivity() {
   const { data, error } = useApi<Activity>("/coach/runs?limit=100");
   const [shown, setShown] = useState(0);
@@ -100,10 +131,16 @@ export function CoachActivity() {
           <p className="small">
             <span className="muted">Last run:</span> {data.last_run ? stampLabel(data.last_run.created_at, today) : "Not run yet"}
           </p>
-          <p className="small">
-            <span className="muted">Next run:</span> {nextRunLabel(data.next_run_expected, new Date(), today)}
-          </p>
-          <p className="muted small">The daily review runs about every {data.interval_hours} hours.</p>
+          {data.auto?.enabled ? (
+            <AutoInfo auto={data.auto} today={today} />
+          ) : (
+            <>
+              <p className="small">
+                <span className="muted">Next run:</span> {nextRunLabel(data.next_run_expected, new Date(), today)}
+              </p>
+              <p className="muted small">The daily review runs about every {data.interval_hours} hours.</p>
+            </>
+          )}
           <RunNow />
           {runs.length > 0 &&
             (shown === 0 ? (
