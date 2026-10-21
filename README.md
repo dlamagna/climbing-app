@@ -75,7 +75,7 @@ and a milestone, and are added to the checklist in the roadmap issue named by `G
 
 ### Optional: daily coach review
 
-A scheduled Claude run can review your data once a day without an API key. It runs as a Claude Code
+A Claude run can review your data after each session, or once a day on a schedule, without an API key. It runs as a Claude Code
 routine on your own Claude subscription, through the same connector. When nothing new was logged it stops
 straight away. Otherwise it:
 - adjusts the coming days of the plan around the days you picked to climb, or suggests days from your load
@@ -90,10 +90,15 @@ turned off on the Coach tab) or with **Plan my climbing days** on the Coach tab.
 
 **Setup, the routine prompt, testing and troubleshooting: [docs/daily-coach-review.md](docs/daily-coach-review.md).**
 
-### Optional: run the review from the app
+### Optional: run the review after each session, or from the app
 
-Coach → Coach activity can start the coach review (and an issue-worker routine, if you have one) on
-demand. For each routine, open it at [claude.ai/code/routines](https://claude.ai/code/routines), add an
+With the routines' API triggers set up, logging a training session starts the coach review straight away.
+When the review finishes, the issue worker (if you have one) starts too, but only when GitHub has open P0
+or P1 issues for it, and it's told to work through all of them in one run. A hangboard run counts once you
+tap Save and close with *Training session* picked; one saved as a warm-up starts nothing. Coach → Coach
+activity shows the last automatic start and can also start either routine by hand.
+
+For each routine, open it at [claude.ai/code/routines](https://claude.ai/code/routines), add an
 **API** trigger and generate a token. The token is shown once, next to the trigger's URL. Store both as
 worker secrets:
 
@@ -104,9 +109,11 @@ npx wrangler secret put ISSUE_WORKER_FIRE_URL     # optional, same for the issue
 npx wrangler secret put ISSUE_WORKER_FIRE_TOKEN
 ```
 
-Without them, the buttons are hidden. Each token can only start its own routine. Runs started this way
-count against your Claude subscription like scheduled ones, and each routine can be started up to 30 times
-an hour.
+Without them, the buttons are hidden and nothing starts automatically, so the routines need a schedule of
+their own. With them, the routines don't need a schedule: remove it, or they run on both. The issue check
+uses `GITHUB_TOKEN`; without it the worker always starts after the review. Each token can only start its
+own routine. Runs started this way count against your Claude subscription like
+scheduled ones, and each routine can be started up to 30 times an hour.
 
 ## Your data stays private
 

@@ -1,4 +1,5 @@
-// Run the daily coach review or the nightly issue worker from the app (Coach → Coach activity).
+// Start the coach review or the issue worker: by hand from the app (Coach → Coach activity), or
+// automatically after a training session is logged (worker/autoStart.ts).
 // Both are Claude Code routines with an API trigger. Each trigger has its own URL and token, created
 // at claude.ai/code/routines and stored as worker secrets. A token can only start its own routine.
 // See https://platform.claude.com/docs/en/api/claude-code/routines-fire
@@ -36,7 +37,14 @@ export const routinesAvailable = (env: Env): Record<RoutineName, boolean> => ({
   worker: config(env, "worker") !== null,
 });
 
-export async function fireRoutine(env: Env, name: RoutineName, now = Date.now()): Promise<{ session_url: string | null }> {
+export const APP_START_TEXT = "Started from the app (Coach → Coach activity).";
+
+export async function fireRoutine(
+  env: Env,
+  name: RoutineName,
+  now = Date.now(),
+  text = APP_START_TEXT,
+): Promise<{ session_url: string | null }> {
   const { label } = ROUTINES[name];
   const cfg = config(env, name);
   if (!cfg) throw new BadRequest(`The ${label} isn't set up to run from the app (see the README).`);
@@ -53,7 +61,7 @@ export async function fireRoutine(env: Env, name: RoutineName, now = Date.now())
         "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ text: `Started from the app (Coach → Coach activity).` }),
+      body: JSON.stringify({ text }),
       signal: AbortSignal.timeout(15_000),
     });
   } catch {

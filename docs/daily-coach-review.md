@@ -1,6 +1,6 @@
 # Daily coach review
 
-A scheduled Claude run that reviews your training data once a day and keeps the app up to date between
+A Claude run that reviews your training data after you train (or once a day on a schedule) and keeps the app up to date between
 conversations. It runs as a [Claude Code routine](https://claude.ai/code/routines) on your own Claude
 subscription, so there is no API key and no extra cost. It reads and writes your data through the same MCP
 connector you use in the Claude app.
@@ -48,7 +48,7 @@ prompt never needs to change.
 | Coach → Weekly pop-up | Turns the weekly pop-up off. The question still shows as a card on the Coach tab | - |
 | Coach → *Send a note to the coach* | Free-text context, e.g. a busy week or a goal | Read in the next run |
 
-Answers reach the review the same night. A pick made in the morning changes the plan from tomorrow on,
+Answers reach the next review: after your next logged session, or the same night on a schedule. A pick made in the morning changes the plan from tomorrow on,
 because the review never rewrites today.
 
 ### Feedback priority
@@ -59,7 +59,7 @@ picked and doesn't change it:
 | Priority | Meaning | What happens |
 |---|---|---|
 | P0 | Blocks daily use | Filed as P0 in the next review |
-| P1 | Worth doing soon | Filed as P1. A nightly development run, if you set one up, works on open P0 and P1 issues (P0 first) |
+| P1 | Worth doing soon | Filed as P1. The issue worker, if you set one up, works on all open P0 and P1 issues (P0 first) after the next review |
 | P2 | Nice to have | Filed as P2 with the `backlog` label, and listed under the roadmap issue's *Backlog* section |
 | none | - | The review picks the priority itself, as before |
 
@@ -82,7 +82,7 @@ Run `/schedule` in Claude Code, choose *Create a routine*, and give it:
 | Setting | Value |
 |---|---|
 | Name | e.g. *Climbing daily coach review* |
-| Schedule | Daily, after you usually train. The schedule is in **UTC**: for 22:30 at UTC+1, use `30 21 * * *`. Summer time shifts it by an hour, so pick the time for the part of the year you care about most |
+| Schedule | Either none, with an API trigger so it [starts when you log a session](../README.md#optional-run-the-review-after-each-session-or-from-the-app), or daily after you usually train. A schedule is in **UTC**: for 22:30 at UTC+1, use `30 21 * * *`. Summer time shifts it by an hour, so pick the time for the part of the year you care about most |
 | Model | A Sonnet model is plenty. The run reads data and adjusts a plan |
 | Environment | Any cloud environment |
 | Repository | Your fork of this repo. Routines need a checkout, but the run doesn't change it |

@@ -148,6 +148,20 @@ export interface CoachActivity {
   next_run_expected: string | null; // UTC timestamp
   interval_hours: number;
   runs: CoachRun[]; // newest first
+  auto?: AutoStart; // missing from servers older than automatic starts
+}
+
+// Starting the review (then the issue worker) when a session is logged (worker/autoStart.ts).
+export interface AutoStart {
+  enabled: boolean;
+  worker: boolean;
+  last: {
+    routine: "review" | "worker";
+    status: "starting" | "started" | "failed" | "skipped";
+    error: string | null;
+    session_url: string | null;
+    created_at: string;
+  } | null;
 }
 
 export type FeedbackPriority = "P0" | "P1" | "P2";

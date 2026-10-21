@@ -435,6 +435,10 @@ function Finished({ result, onClose }: { result: Result; onClose: () => void }) 
         return;
       }
       toast(message);
+      // A training run is done: its session can start the coach review. Queued offline like the other writes.
+      if (modeRef.current === "training" && state !== "skipped") {
+        send("POST", `/hangs/by-key/${key.current}/done`).catch(() => undefined);
+      }
       onClose();
     } finally {
       setClosing(false);

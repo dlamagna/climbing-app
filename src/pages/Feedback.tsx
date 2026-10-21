@@ -9,7 +9,7 @@ import type { AppFeedback, FeedbackPriority } from "../types";
 // What each priority means (#68). The coach review files the issue with the one picked; none picked = it decides.
 const PRIORITIES: { value: FeedbackPriority; label: string; hint: string }[] = [
   { value: "P0", label: "P0", hint: "Blocks daily use. Filed as urgent in the next review." },
-  { value: "P1", label: "P1", hint: "Worth doing soon. Picked up by the nightly development run." },
+  { value: "P1", label: "P1", hint: "Worth doing soon. Picked up by the issue worker after your next session." },
   { value: "P2", label: "P2", hint: "Nice to have. Goes to the backlog." },
 ];
 

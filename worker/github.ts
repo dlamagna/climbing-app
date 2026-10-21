@@ -9,9 +9,9 @@ export const ISSUE_LABELS = ["enhancement", "bug", "testing", "infra", "health-d
 // Priority labels ("priority: P1"), also pre-created in the repo.
 export const PRIORITIES = ["P0", "P1", "P2"] as const;
 export type Priority = (typeof PRIORITIES)[number];
-// The same meanings as the app's feedback form (#68): P1 issues are picked up by the nightly development run.
+// The same meanings as the app's feedback form (#68): P1 issues are picked up by the issue worker, which runs after the review.
 export const PRIORITY_TEXT =
-  "P0 = broken or blocking daily use, P1 = worth doing soon (picked up by the nightly development run), P2 = backlog";
+  "P0 = broken or blocking daily use, P1 = worth doing soon (picked up by the issue worker after the next review), P2 = backlog";
 export const priorityLabel = (p: Priority) => `priority: ${p}`;
 
 // P2 issues also get this label (pre-created in the repo) and go under the roadmap's BACKLOG_SECTION.
@@ -92,6 +92,45 @@ export async function listIssues(env: Env, state: "open" | "closed" | "all") {
       milestone: i.milestone?.title ?? null,
       url: i.html_url,
     }));
+}
+
+// The issue worker's own selection rules (its routine prompt), so the app only starts it when it has work.
+export const WORKER_PRIORITIES = [priorityLabel("P0"), priorityLabel("P1")];
+export const WORKER_SKIP_LABELS = ["backlog", "needs-owner", "wontfix", "duplicate", "question"];
+
+interface OpenItem {
+  number: number;
+  title: string;
+  body: string | null;
+  user: { login: string } | null;
+  labels: { name: string }[];
+  pull_request?: unknown;
+}
+
+// Issues the worker would pick up from the open issues and PRs (the issues endpoint returns both): opened by
+// the repo owner, labelled P0 or P1, none of the skip labels, not the roadmap issue, and not mentioned as #N by
+// an open PR. Pure, for tests.
+export function workerIssueNumbers(items: OpenItem[], owner: string, roadmap: number | null): number[] {
+  const referenced = new Set(
+    items
+      .filter((i) => i.pull_request)
+      .flatMap((p) => [...`${p.title}\n${p.body ?? ""}`.matchAll(/#(\d+)\b/g)].map((m) => Number(m[1]))),
+  );
+  return items
+    .filter((i) => {
+      if (i.pull_request || i.number === roadmap || referenced.has(i.number)) return false;
+      if (i.user?.login.toLowerCase() !== owner.toLowerCase()) return false;
+      const labels = i.labels.map((l) => l.name);
+      return labels.some((l) => WORKER_PRIORITIES.includes(l)) && !labels.some((l) => WORKER_SKIP_LABELS.includes(l));
+    })
+    .map((i) => i.number)
+    .sort((a, b) => a - b);
+}
+
+export async function workerIssues(env: Env): Promise<number[]> {
+  const items = await github<OpenItem[]>(env, "/issues?state=open&per_page=100");
+  const roadmap = Number(env.GITHUB_ROADMAP_ISSUE);
+  return workerIssueNumbers(items, env.GITHUB_REPO!.split("/")[0], Number.isInteger(roadmap) && roadmap > 0 ? roadmap : null);
 }
 
 export async function listMilestones(env: Env) {
