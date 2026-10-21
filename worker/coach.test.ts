@@ -42,6 +42,7 @@ import {
   setClimbingDays,
   reviewDecision,
   startReview,
+  todayCheck,
   weeklyQuestion,
 } from "./coach";
 import { setPlan } from "./db";
@@ -176,6 +177,34 @@ describe("climbingDaysContext", () => {
       note: "probably two evenings",
     });
     expect(climbingDaysContext(null)).toBeNull();
+  });
+});
+
+describe("todayCheck", () => {
+  const picked = (days: string[]) =>
+    climbingDaysContext({ topic: "climb_days:2026-05-10", answer: days.length ? days.join(", ") : NO_CLIMBING, expires_on: "2026-05-19", answered_at: "2026-05-09T20:00:00Z" });
+  const entry = (type: string, extra: { source?: string; status_override?: string } = {}) => ({
+    id: 1,
+    type,
+    source: extra.source ?? "coach",
+    status_override: extra.status_override ?? null,
+  });
+
+  it("flags a picked day whose plan isn't climbing, and a climbing plan on a day not picked", () => {
+    expect(todayCheck(TODAY, picked(["Sun 10", "Wed 13"]), [entry("cardio")], [])).toMatchObject({ issue: "picked_but_not_planned", plan_ids: [1] });
+    expect(todayCheck(TODAY, picked(["Sun 10"]), [], [])).toMatchObject({ issue: "picked_but_not_planned", plan_ids: [] });
+    expect(todayCheck(TODAY, picked(["Wed 13"]), [entry("board")], [])).toMatchObject({ issue: "planned_but_not_picked" });
+    expect(todayCheck(TODAY, picked([]), [entry("lead")], [])).toMatchObject({ issue: "planned_but_not_picked" });
+  });
+
+  it("is quiet when today fits, is outside the pick, is already climbed, or is the climber's own entry", () => {
+    expect(todayCheck(TODAY, picked(["Sun 10"]), [entry("boulder")], [])).toBeNull();
+    expect(todayCheck(TODAY, picked(["Wed 13"]), [entry("rest")], [])).toBeNull();
+    expect(todayCheck(TODAY, null, [entry("cardio")], [])).toBeNull();
+    expect(todayCheck("2026-05-20", picked(["Wed 13"]), [entry("lead")], [])).toBeNull();
+    expect(todayCheck(TODAY, picked(["Sun 10"]), [entry("cardio")], ["toprope"])).toBeNull();
+    expect(todayCheck(TODAY, picked(["Sun 10"]), [entry("cardio", { source: "app" })], [])).toBeNull();
+    expect(todayCheck(TODAY, picked(["Sun 10"]), [entry("cardio", { status_override: "skipped" })], [])).toBeNull();
   });
 });
 
@@ -441,6 +470,31 @@ describe("questions", () => {
     const r = await startReview(db, TODAY);
     expect(r.climbing_days).toMatchObject({ source: "Plan my climbing days", days: ["2026-05-12", "2026-05-15"], from: TODAY, to: "2026-05-19" });
     expect(r.changes.answered_questions).toEqual([]);
+  });
+
+  it("start_daily_review flags today when it was picked but planned as something else", async () => {
+    await recordRun(db, { outcome: "no_change", summary: null, changes: [], seen_through: nowStamp() });
+    exec("INSERT INTO plan (date, title, type, source, created_at) VALUES (?, 'Run', 'cardio', 'coach', '2026-05-01T07:00:00Z')", TODAY);
+    await setClimbingDays(db, { days: [TODAY, "2026-05-14"] }, TODAY);
+    const [q] = (await pendingQuestions(db, TODAY)).answered;
+    await closeQuestions(db, [q.id]);
+    const r = await startReview(db, TODAY);
+    expect(r.today_check).toMatchObject({ issue: "picked_but_not_planned" });
+    expect(r.review_needed).toBe(true);
+    expect(r.reasons.some((x) => x.includes("picked climbing day"))).toBe(true);
+
+    exec("INSERT INTO sessions (date, type, duration_min, rpe, created_at) VALUES (?, 'boulder', 60, 6, '2026-05-10T18:00:00Z')", TODAY);
+    expect((await startReview(db, TODAY)).today_check).toBeNull();
+  });
+
+  it("re-saving the same day also refreshes the window, so an older shorter window doesn't cut days off", async () => {
+    await setClimbingDays(db, { days: ["2026-05-12"] }, TODAY);
+    exec("UPDATE coach_questions SET expires_on = '2026-05-16', options = '[]' WHERE topic = ?", `climb_days:${TODAY}`);
+    await setClimbingDays(db, { days: ["2026-05-12", "2026-05-18"] }, TODAY);
+    const [row] = rows("SELECT expires_on, options FROM coach_questions WHERE topic = ?", `climb_days:${TODAY}`);
+    expect(row.expires_on).toBe("2026-05-19");
+    expect(JSON.parse(row.options as string)).toHaveLength(11);
+    expect(climbingDaysContext((await currentClimbingDays(db, TODAY))!)!.days).toEqual(["2026-05-12", "2026-05-18"]);
   });
 
   it("start_daily_review creates the weekly question too", async () => {
