@@ -1,7 +1,7 @@
 // Daily coach review (#52). A scheduled Claude run (a Claude Code routine on the climber's own account, no API
 // key) calls start_daily_review, which says what changed since the last run and whether a review is needed.
 // When it is, Claude adjusts the coming plan, may leave a coach note and may ask the climber a question; the
-// app shows open questions on the Today screen and the answers reach the next run. Every run ends with
+// app shows open questions on the Coach tab and the answers reach the next run. Every run ends with
 // record_coach_run, whose seen_through is where the next run starts looking.
 //
 // Validation and the "is a review needed" call are pure (coach.test.ts); the D1 queries are below them.
@@ -10,6 +10,8 @@ import { BadRequest, NotFound } from "./errors";
 import { CLIMB_DAYS_AHEAD, CLIMB_DAYS_TOPIC, NOT_THIS_WEEK, NO_CLIMBING, WEEK_TOPIC } from "./coachTopics";
 import { isIsoDate } from "./injury-dates";
 import { addDays, daysBetween, mondayOf } from "./load";
+import { PRIORITIES, PRIORITY_TEXT, type Priority } from "./github";
+import { isClimbingType } from "./typeGroups";
 
 export { CLIMB_DAYS_AHEAD, CLIMB_DAYS_TOPIC, NOT_THIS_WEEK, NO_CLIMBING, WEEK_TOPIC };
 
@@ -205,11 +207,13 @@ export async function setClimbingDays(db: D1Database, body: unknown, today: stri
         `INSERT INTO coach_questions (question, why, options, allow_text, multi, expires_on, topic, answer, answered_at)
          VALUES (?, ?, ?, 1, 1, ?, ?, ?, ?)
          ON CONFLICT (topic) DO UPDATE SET answer = excluded.answer, answered_at = excluded.answered_at,
-           skipped_at = NULL, closed_at = NULL`,
+           skipped_at = NULL, closed_at = NULL,
+           -- the window too, so a row first saved under a shorter window doesn't keep cutting days off (#75)
+           question = excluded.question, options = excluded.options, expires_on = excluded.expires_on`,
       )
       .bind(
         `${CLIMB_DAYS_QUESTION} (${window[0]} to ${window[window.length - 1]})`,
-        "Set with Plan my climbing days on the Today screen",
+        "Set with Plan my climbing days on the Coach tab",
         JSON.stringify([...window, NO_CLIMBING]),
         addDays(today, CLIMB_DAYS_AHEAD - 1),
         `${CLIMB_DAYS_TOPIC}:${today}`,
@@ -228,7 +232,7 @@ export async function setClimbingDays(db: D1Database, body: unknown, today: stri
 }
 
 // The climbing days picked most recently (weekly question or the button) that still cover today, for the
-// Today screen.
+// Coach tab.
 export async function currentClimbingDays(db: D1Database, today: string) {
   return db
     .prepare(
@@ -281,6 +285,57 @@ export function climbingDaysContext(
   };
 }
 
+// Today against the latest pick (#75). The review plans from tomorrow, so a day picked for today (or today
+// dropped from the picks) would otherwise never reach today's plan. Returns what is off, or null when today
+// fits the pick, isn't covered by it, already has a climbing session logged, or has a plan entry the climber
+// added by hand or set a status on (those are theirs).
+export interface TodayPlanEntry {
+  id: number;
+  type: string | null;
+  source: string | null;
+  status_override: string | null;
+}
+
+export interface TodayCheck {
+  issue: "picked_but_not_planned" | "planned_but_not_picked";
+  plan_ids: number[]; // today's entries the review may replace
+  message: string;
+}
+
+export function todayCheck(
+  today: string,
+  picked: ClimbingDaysContext | null,
+  entries: TodayPlanEntry[],
+  sessionTypes: string[],
+): TodayCheck | null {
+  if (!picked || today < picked.from || today > picked.to) return null;
+  if (sessionTypes.some(isClimbingType)) return null;
+  if (entries.some((e) => e.source === "app" || e.status_override)) return null;
+  const climbing = entries.some((e) => isClimbingType(e.type));
+  const plan_ids = entries.map((e) => e.id);
+  if (picked.days.includes(today) && !climbing)
+    return {
+      issue: "picked_but_not_planned",
+      plan_ids,
+      message: "Today is a picked climbing day but today's plan has no climbing session",
+    };
+  if (!picked.days.includes(today) && climbing)
+    return {
+      issue: "planned_but_not_picked",
+      plan_ids,
+      message: "Today's plan has a climbing session but today isn't a picked climbing day",
+    };
+  return null;
+}
+
+async function todayPlanAndSessions(db: D1Database, today: string) {
+  const [plan, sessions] = await Promise.all([
+    db.prepare("SELECT id, type, source, status_override FROM plan WHERE date = ?").bind(today).all<TodayPlanEntry>(),
+    db.prepare("SELECT type FROM sessions WHERE date = ?").bind(today).all<{ type: string }>(),
+  ]);
+  return { entries: plan.results ?? [], sessionTypes: (sessions.results ?? []).map((s) => s.type) };
+}
+
 export async function ensureWeeklyQuestion(db: D1Database, today: string): Promise<void> {
   const q = weeklyQuestion(today);
   if (!q) return;
@@ -316,6 +371,7 @@ export interface FeedbackRow {
   id: number;
   text: string;
   status: "new" | FeedbackOutcome;
+  priority: Priority | null; // picked in the app (#68); null = left to the review
   issue_number: number | null;
   issue_url: string | null;
   reply: string | null;
@@ -323,8 +379,27 @@ export interface FeedbackRow {
   created_at: string;
 }
 
+// Notes the climber sends the coach from the Coach tab (#65, #80).
+const MAX_CLIMBER_NOTE = 2000;
+export interface ClimberNote {
+  id: number;
+  text: string;
+  created_at: string;
+}
+
+export const parseClimberNote = (body: unknown): string =>
+  text(((body ?? {}) as Record<string, unknown>).text, "note", MAX_CLIMBER_NOTE, true)!;
+
 export const parseFeedback = (body: unknown): string =>
   text(((body ?? {}) as Record<string, unknown>).text, "feedback", MAX_FEEDBACK, true)!;
+
+// The priority picked in the app's feedback form (#68). Missing or null = not picked: the review decides.
+export function parseFeedbackPriority(body: unknown): Priority | null {
+  const p = ((body ?? {}) as Record<string, unknown>).priority;
+  if (p === undefined || p === null) return null;
+  if (!PRIORITIES.includes(p as Priority)) throw new BadRequest(`priority must be one of ${PRIORITIES.join(", ")}`);
+  return p as Priority;
+}
 
 export interface FeedbackResolution {
   status: FeedbackOutcome;
@@ -362,7 +437,8 @@ export interface ReviewChanges {
   plan_entries_added_by_hand: { id: number; date: string; title: string }[];
   answered_questions: Question[];
   skipped_questions: Question[];
-  new_feedback: Pick<FeedbackRow, "id" | "text" | "created_at">[];
+  new_feedback: Pick<FeedbackRow, "id" | "text" | "priority" | "created_at">[];
+  notes_from_climber: ClimberNote[];
   checkins: number;
   benchmarks: number;
 }
@@ -374,6 +450,7 @@ export function reviewDecision(
   lastRun: { seen_through: string } | null,
   c: ReviewChanges,
   plannedDaysAhead: number,
+  today: TodayCheck | null = null,
 ): { review_needed: boolean; reasons: string[] } {
   const reasons: string[] = [];
   if (!lastRun) reasons.push("first review");
@@ -387,8 +464,12 @@ export function reviewDecision(
   if (c.profile_keys.length) reasons.push(`profile changed (${c.profile_keys.join(", ")})`);
   if (c.plan_entries_added_by_hand.length) reasons.push("plan entries added by hand");
   if (c.new_feedback.length) reasons.push(`${c.new_feedback.length} app feedback item${c.new_feedback.length === 1 ? "" : "s"} to triage`);
+  if (c.notes_from_climber.length) {
+    reasons.push(`${c.notes_from_climber.length} note${c.notes_from_climber.length === 1 ? "" : "s"} from the climber`);
+  }
   if (c.answered_questions.length) reasons.push(`${c.answered_questions.length} question${c.answered_questions.length === 1 ? "" : "s"} answered`);
   if (plannedDaysAhead < MIN_PLANNED_DAYS_AHEAD) reasons.push(`only ${plannedDaysAhead} of the next 7 days planned`);
+  if (today) reasons.push(today.message.charAt(0).toLowerCase() + today.message.slice(1));
   return { review_needed: reasons.length > 0, reasons };
 }
 
@@ -416,10 +497,18 @@ the climber anything in chat, work only through these tools.
    answers: climbing_days (in this result and in get_overview's coach) is the latest pick that still applies,
    already as dates, and stays there after you close the question.
 
+   Notes from the climber (changes.notes_from_climber): extra context they sent you from the app. Use it like
+   an answer: lasting facts to the profile, short-lived ones into the plan. Mention it in the summary when it
+   changed something.
+
 4. Plan: keep the next 7 days filled, starting tomorrow, and further when climbing_days.to reaches past them
    (up to that day). Change only what the new data calls for; if the
    plan still fits, leave it. Rewrite with set_plan and keep_app_entries: true (entries the climber added or
-   set a status on stay). Never change today or past days. Put planned tests in expected_benchmarks.
+   set a status on stay). Never change past days, and change today only when today_check is set: then
+   rewrite today too, so it matches the pick ("picked_but_not_planned": a climbing session that suits
+   today's readiness; "planned_but_not_picked": rest or light non-climbing work instead). Put planned
+   tests in expected_benchmarks.
+   Write details as short labelled lines, one per block ('Warm-up 15 min: ...', 'Main: ...'), not a paragraph.
    Fixed sessions are the days in climbing_days.days and plan entries the climber added by hand (source
    'app') or set a status on. Plan around them:
    - Picked days: put the climbing sessions on them; days between them get rest, mobility or light
@@ -434,7 +523,8 @@ the climber anything in chat, work only through these tools.
      the coach note that they can change the days with Plan my climbing days.
 
 5. Coach note: if something is worth saying (why the plan changed, tomorrow's focus, a load or injury
-   warning), add one short note with add_coach_note dated tomorrow. Skip it when there's nothing new.
+   warning), add one short note with add_coach_note dated tomorrow: 2-4 short lines, one point each, separated
+   by newlines (the app shows each line as a bullet). Skip it when there's nothing new.
 
 6. Questions: ask with ask_question only when the answer would change the plan and the data can't tell you
    (intentions for the week, upcoming trips or time off, a constraint, what a vague session note meant). At
@@ -446,13 +536,15 @@ the climber anything in chat, work only through these tools.
 7. App feedback (changes.new_feedback, typed by the climber in the app about the app itself): decide for each
    one. A real bug or a useful idea: call list_issues; if an open issue already covers it, resolve_feedback
    "duplicate" with that issue_number (and say so in the reply). Otherwise file it with report_issue: labels
-   (bug / enhancement / ...), a priority (P0 = broken or blocking daily use, P1 = worth doing soon, P2 = nice
-   to have), a milestone when one fits (it is then listed in the roadmap), then resolve_feedback "filed" with
-   the issue number and url. Not actionable, unclear or not about the app: resolve_feedback "declined" with a
-   short reply (training information in it still counts as input for the plan). The repo is PUBLIC: write
-   the issue in general terms, never quote the feedback, and leave out anything personal (training data,
-   health, places, dates, trips, names, devices). If report_issue isn't available, leave the feedback as it is
-   and say so in the summary.
+   (bug / enhancement / ...), a priority, a milestone when one fits (it is then listed in the roadmap), then
+   resolve_feedback "filed" with the issue number and url. The priority: use the one the climber picked
+   (the item's priority) as it is, don't change it. Only when it is null, choose it yourself. ${PRIORITY_TEXT}.
+   report_issue gives a P2 issue the backlog label and lists it under the roadmap's backlog section.
+   Not actionable, unclear or not about the app: resolve_feedback "declined" with a short reply (training
+   information in it still counts as input for the plan). The repo is PUBLIC: write the issue in general
+   terms, never quote the feedback, and leave out anything personal (training data, health, places, dates,
+   trips, names, devices). If report_issue isn't available, leave the feedback as it is and say so in the
+   summary.
 
 8. Finish with record_coach_run: outcome "updated" if you changed anything (plan, note, profile, questions,
    feedback), else "no_change"; a one or two line summary the climber reads in the app ("Moved Thursday's board session
@@ -558,9 +650,34 @@ const decodeRun = (row: (Omit<CoachRunRow, "changes"> & { changes: string | null
 export const lastRun = async (db: D1Database) =>
   decodeRun(await db.prepare("SELECT * FROM coach_runs ORDER BY id DESC LIMIT 1").first());
 
-// The last run that changed something, for the Today screen (a "nothing new" run would hide it otherwise).
+// The last run that changed something, for the Coach tab (a "nothing new" run would hide it otherwise).
 export const lastUpdate = async (db: D1Database) =>
   decodeRun(await db.prepare("SELECT * FROM coach_runs WHERE outcome = 'updated' ORDER BY id DESC LIMIT 1").first());
+
+// Without automatic starts the review runs on a schedule, about once a day (a routine outside the app, so its
+// exact schedule isn't stored here).
+export const RUN_INTERVAL_HOURS = 24;
+export const MAX_RUN_HISTORY = 100;
+
+// When the next run is expected: one interval after the last one (null before the first run).
+export function nextRunExpected(last: Pick<CoachRunRow, "created_at"> | null): string | null {
+  if (!last) return null;
+  const t = Date.parse(last.created_at);
+  return Number.isNaN(t) ? null : nowStamp(new Date(t + RUN_INTERVAL_HOURS * 3_600_000));
+}
+
+// Past runs, newest first, for the Coach tab's coach activity (#64, #80).
+export async function listRuns(db: D1Database, limit = 30): Promise<CoachRunRow[]> {
+  const n = Math.min(Math.max(1, Math.trunc(limit) || 30), MAX_RUN_HISTORY);
+  const { results } = await db.prepare("SELECT * FROM coach_runs ORDER BY id DESC LIMIT ?").bind(n).all();
+  return (results as Parameters<typeof decodeRun>[0][]).map((r) => decodeRun(r)!);
+}
+
+export async function coachActivity(db: D1Database, limit?: number) {
+  const runs = await listRuns(db, limit);
+  const last = runs[0] ?? null;
+  return { last_run: last, next_run_expected: nextRunExpected(last), interval_hours: RUN_INTERVAL_HOURS, runs };
+}
 
 export async function recordRun(db: D1Database, run: CoachRun): Promise<number> {
   const row = await db
@@ -583,7 +700,7 @@ export async function changesSince(
 ): Promise<ReviewChanges> {
   const s = last?.seen_through ?? nowStamp(new Date(Date.now() - FIRST_RUN_LOOKBACK_DAYS * 86_400_000));
   const p = last?.created_at ?? s;
-  const [sessions, newInjuries, updates, profile, planByHand, answered, skipped, feedback, checkins, benchmarks] = await Promise.all([
+  const [sessions, newInjuries, updates, profile, planByHand, answered, skipped, feedback, notes, checkins, benchmarks] = await Promise.all([
     all<ChangedSession & { created_at: string }>(
       db,
       `SELECT id, date, type, duration_min, rpe, created_at FROM sessions
@@ -602,7 +719,8 @@ export async function changesSince(
     ),
     all<QuestionRow>(db, "SELECT * FROM coach_questions WHERE closed_at IS NULL AND answered_at IS NOT NULL ORDER BY id"),
     all<QuestionRow>(db, "SELECT * FROM coach_questions WHERE closed_at IS NULL AND skipped_at IS NOT NULL ORDER BY id"),
-    all<ReviewChanges["new_feedback"][number]>(db, "SELECT id, text, created_at FROM app_feedback WHERE status = 'new' ORDER BY id"),
+    all<ReviewChanges["new_feedback"][number]>(db, "SELECT id, text, priority, created_at FROM app_feedback WHERE status = 'new' ORDER BY id"),
+    all<ClimberNote>(db, "SELECT id, text, created_at FROM climber_notes WHERE created_at >= ? ORDER BY id", s),
     db.prepare("SELECT COUNT(*) AS n FROM checkins WHERE updated_at >= ?").bind(s).first<{ n: number }>(),
     db.prepare("SELECT COUNT(*) AS n FROM benchmarks WHERE created_at >= ?").bind(s).first<{ n: number }>(),
   ]);
@@ -615,6 +733,7 @@ export async function changesSince(
     answered_questions: answered.map((r) => decodeQuestion(r, today)),
     skipped_questions: skipped.map((r) => decodeQuestion(r, today)),
     new_feedback: feedback,
+    notes_from_climber: notes,
     checkins: checkins?.n ?? 0,
     benchmarks: benchmarks?.n ?? 0,
   };
@@ -624,18 +743,49 @@ export async function changesSince(
 export const listFeedback = (db: D1Database) =>
   all<FeedbackRow>(
     db,
-    "SELECT id, text, status, issue_number, issue_url, reply, handled_at, created_at FROM app_feedback ORDER BY id DESC LIMIT 50",
+    "SELECT id, text, status, priority, issue_number, issue_url, reply, handled_at, created_at FROM app_feedback ORDER BY id DESC LIMIT 50",
   );
+
+// The climber's notes to the coach, newest first, for the app.
+export const listClimberNotes = (db: D1Database, limit = 20) =>
+  all<ClimberNote>(db, "SELECT id, text, created_at FROM climber_notes ORDER BY id DESC LIMIT ?", limit);
+
+// clientId makes a replayed offline send return the first row instead of adding a copy.
+export async function addClimberNote(db: D1Database, body: unknown, clientId: string | null): Promise<number> {
+  const t = parseClimberNote(body);
+  const row = await db
+    .prepare("INSERT INTO climber_notes (text, client_id) VALUES (?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id")
+    .bind(t, clientId)
+    .first<{ id: number }>();
+  if (row) return row.id;
+  return (await db.prepare("SELECT id FROM climber_notes WHERE client_id = ?").bind(clientId).first<{ id: number }>())!.id;
+}
 
 // clientId makes a replayed offline submit return the first row instead of adding a copy.
 export async function addFeedback(db: D1Database, body: unknown, clientId: string | null): Promise<number> {
   const t = parseFeedback(body);
+  const priority = parseFeedbackPriority(body);
   const row = await db
-    .prepare("INSERT INTO app_feedback (text, client_id) VALUES (?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id")
-    .bind(t, clientId)
+    .prepare("INSERT INTO app_feedback (text, priority, client_id) VALUES (?, ?, ?) ON CONFLICT (client_id) DO NOTHING RETURNING id")
+    .bind(t, priority, clientId)
     .first<{ id: number }>();
   if (row) return row.id;
   return (await db.prepare("SELECT id FROM app_feedback WHERE client_id = ?").bind(clientId).first<{ id: number }>())!.id;
+}
+
+// Edit the text of feedback the coach hasn't triaged yet; once it is filed or declined the text is the record.
+export async function editFeedback(db: D1Database, id: unknown, body: unknown) {
+  if (!Number.isInteger(id)) throw new BadRequest("id is required (integer)");
+  const row = await db.prepare("UPDATE app_feedback SET text = ? WHERE id = ? AND status = 'new' RETURNING id").bind(parseFeedback(body), id).first();
+  if (row) return;
+  if (await db.prepare("SELECT id FROM app_feedback WHERE id = ?").bind(id).first()) throw new BadRequest("Only feedback waiting for review can be edited");
+  throw new NotFound(`Feedback ${id} not found`);
+}
+
+export async function deleteFeedback(db: D1Database, id: unknown) {
+  if (!Number.isInteger(id)) throw new BadRequest("id is required (integer)");
+  const row = await db.prepare("DELETE FROM app_feedback WHERE id = ? RETURNING id").bind(id).first();
+  if (!row) throw new NotFound(`Feedback ${id} not found`);
 }
 
 export async function resolveFeedback(db: D1Database, id: unknown, r: FeedbackResolution) {
@@ -664,20 +814,24 @@ export async function startReview(db: D1Database, today: string) {
   const checked_at = nowStamp();
   await ensureWeeklyQuestion(db, today);
   const last = await lastRun(db);
-  const [changes, ahead, pending, picked] = await Promise.all([
+  const [changes, ahead, pending, picked, todayRows] = await Promise.all([
     changesSince(db, last, today),
     plannedDaysAhead(db, today),
     pendingQuestions(db, today),
     currentClimbingDays(db, today),
+    todayPlanAndSessions(db, today),
   ]);
-  const decision = reviewDecision(last, changes, ahead);
+  const climbing_days = climbingDaysContext(picked);
+  const today_check = todayCheck(today, climbing_days, todayRows.entries, todayRows.sessionTypes);
+  const decision = reviewDecision(last, changes, ahead, today_check);
   return {
     today,
     checked_at,
     last_run: last,
     ...decision,
     planned_days_ahead: ahead,
-    climbing_days: climbingDaysContext(picked),
+    climbing_days,
+    today_check,
     changes,
     open_questions: pending.open,
     instructions: REVIEW_INSTRUCTIONS,

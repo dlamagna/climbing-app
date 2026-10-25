@@ -1,6 +1,6 @@
 # Daily coach review
 
-A scheduled Claude run that reviews your training data once a day and keeps the app up to date between
+A Claude run that reviews your training data after you train (or once a day on a schedule) and keeps the app up to date between
 conversations. It runs as a [Claude Code routine](https://claude.ai/code/routines) on your own Claude
 subscription, so there is no API key and no extra cost. It reads and writes your data through the same MCP
 connector you use in the Claude app.
@@ -16,33 +16,54 @@ prompt never needs to change.
   records a `no_change` run and stops. Most rest days end here after a few seconds.
 - **Something changed:** the run reads `get_overview` and then:
   - **adjusts the plan** for the next 7 days starting tomorrow, or further when your picked days reach past
-    them. It never touches today or past days, and it
+    them. It never touches past days, and it
     keeps plan entries you added or marked by hand (`set_plan` with `keep_app_entries`).
+  - **fixes today when it doesn't match your pick.** If today is a picked climbing day but today's plan
+    has no climbing session (or the other way round), `start_daily_review` returns `today_check`, counts
+    it as a reason to review, and the run rewrites today too. It leaves today alone once you've logged a
+    climbing session or added or marked today's entry yourself.
   - **plans around your climbing days.** Days you picked are fixed, and the days between them stay light.
     After the last fixed session, including a single one, it plans forward from the next day. With nothing
     picked, it suggests days from your load, readiness and availability, and titles those sessions
     "Suggested: ...".
   - **may leave a coach note** for tomorrow.
   - **may ask you a question** the data can't answer, such as your plans for the week or a trip. It asks at
-    most a couple per run and keeps no more than 3 open. They show on the Today screen as one-tap cards.
+    most a couple per run and keeps no more than 3 open. They show on the Coach tab as one-tap cards, and Today links there while any are waiting.
   - **sorts app feedback** you sent under More → App feedback. Each item is marked as a duplicate of an
     existing issue, declined, or filed as a GitHub issue with a priority and milestone and added to the
     roadmap issue. Filing needs the [GitHub token](../README.md#optional-file-github-issues-from-claude).
+    The priority is the one you picked in the form (see [Feedback priority](#feedback-priority)); the
+    review only chooses one when you didn't pick any.
 - Every run ends with `record_coach_run`, which logs the outcome. Its timestamp is where the next run starts
-  looking for new data. The Today screen shows what the last review changed.
+  looking for new data. The Coach tab shows what the last review changed.
 
 ### Your input in the app
 
 | Where | What | Used by the review |
 |---|---|---|
-| Today → *Coach asks* | Questions from the review. Tap an answer, type one, or skip | The next run uses the answer, then closes the question |
+| Coach → *Coach asks* | Questions from the review. Tap an answer, type one, or skip | The next run uses the answer, then closes the question |
 | Weekly pop-up (Monday to Wednesday) | *Which days do you plan to climb this week?* | The week's climbing goes on those days |
-| Today → *Plan my climbing days* | Pick days from today to 9 days ahead, with an optional note, any time | Same as the weekly question; the latest pick wins |
-| More → App feedback | Bugs and ideas about the app | Sorted into GitHub issues |
-| Settings → Pop-ups | Turns the weekly pop-up off. The question still shows as a card on Today | - |
+| Coach → *Plan my climbing days* | Pick days from today to 9 days ahead, with an optional note, any time | Same as the weekly question; the latest pick wins |
+| More → App feedback | Bugs and ideas about the app, with an optional priority | Sorted into GitHub issues with that priority |
+| Coach → Weekly pop-up | Turns the weekly pop-up off. The question still shows as a card on the Coach tab | - |
+| Coach → *Send a note to the coach* | Free-text context, e.g. a busy week or a goal | Read in the next run |
 
-Answers reach the review the same night. A pick made in the morning changes the plan from tomorrow on,
+Answers reach the next review: after your next logged session, or the same night on a schedule. A pick made in the morning changes the plan from tomorrow on,
 because the review never rewrites today.
+
+### Feedback priority
+
+The feedback form has an optional priority. The review files the issue with the `priority: Px` label you
+picked and doesn't change it:
+
+| Priority | Meaning | What happens |
+|---|---|---|
+| P0 | Blocks daily use | Filed as P0 in the next review |
+| P1 | Worth doing soon | Filed as P1. The issue worker, if you set one up, works on all open P0 and P1 issues (P0 first) after the next review |
+| P2 | Nice to have | Filed as P2 with the `backlog` label, and listed under the roadmap issue's *Backlog* section |
+| none | - | The review picks the priority itself, as before |
+
+Feedback sent before the picker existed has no priority, so the review picks one for it too.
 
 ## Set it up
 
@@ -61,7 +82,7 @@ Run `/schedule` in Claude Code, choose *Create a routine*, and give it:
 | Setting | Value |
 |---|---|
 | Name | e.g. *Climbing daily coach review* |
-| Schedule | Daily, after you usually train. The schedule is in **UTC**: for 22:30 at UTC+1, use `30 21 * * *`. Summer time shifts it by an hour, so pick the time for the part of the year you care about most |
+| Schedule | Either none, with an API trigger so it [starts when you log a session](../README.md#optional-run-the-review-after-each-session-or-from-the-app), or daily after you usually train. A schedule is in **UTC**: for 22:30 at UTC+1, use `30 21 * * *`. Summer time shifts it by an hour, so pick the time for the part of the year you care about most |
 | Model | A Sonnet model is plenty. The run reads data and adjusts a plan |
 | Environment | Any cloud environment |
 | Repository | Your fork of this repo. Routines need a checkout, but the run doesn't change it |
@@ -108,8 +129,8 @@ any Claude chat that has the connector.
 
 ## Checking on it
 
-- **In the app:** the coach card on Today shows the last review that changed something, and *What changed*
-  lists the changes.
+- **In the app:** the Coach tab shows the last review that changed something (*What changed* lists the
+  changes) and the coach activity history.
 - **In Claude:** ask "when did the daily review last run and what did it do?". `get_overview` returns
   `coach.last_run`. With the `query` tool you can list all runs:
   `SELECT created_at, outcome, summary FROM coach_runs ORDER BY id DESC LIMIT 10`.
@@ -123,7 +144,7 @@ any Claude chat that has the connector.
 | Every run says "no_change" though you trained | The session was logged after the run started; it will be picked up the next night. Or the run failed before `record_coach_run`; check the run log |
 | A review on a day with nothing new | Fewer than 3 of the next 7 days had a plan entry, so the run filled them |
 | Questions never show up | The run asked none (it only asks when the answer would change the plan), or they expired. They last 3 days by default |
-| The weekly pop-up doesn't appear | Pop-ups are off in Settings, it's Thursday or later, or this week's question was already answered or replaced by *Plan my climbing days* |
+| The weekly pop-up doesn't appear | The pop-up is off on the Coach tab, it's Thursday or later, or this week's question was already answered or replaced by *Plan my climbing days* |
 | Feedback stays "waiting for review" | No GitHub token is set, so the run can't file issues |
 
 ## Privacy

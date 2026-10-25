@@ -7,7 +7,7 @@ import { BenchmarkFields, useBenchmarkInputs } from "../components/plannedBenchm
 import { NoteSuggestions } from "../components/noteSuggestions";
 import { TagPicker, takesTags } from "../components/TagPicker";
 import { Chips, DatePicker, Field, PageHeader, Stepper, range } from "../components/ui";
-import { localToday } from "../dates";
+import { localToday, presetLogDate } from "../dates";
 import { type NoteSuggestions as Suggestions, noteSuggestions } from "../painWords";
 import { type Injury, type Readiness, SESSION_TYPES, type Session, type TodayView } from "../types";
 import { gradeHint, parseGrade } from "../../worker/grades";
@@ -40,7 +40,9 @@ export function readinessNote(r: Readiness | undefined, s: { date: string; durat
 
 // #/log?edit=<id> opens an existing session (from History) prefilled.
 export default function Log() {
-  const editId = new URLSearchParams(location.hash.split("?")[1]).get("edit");
+  const query = new URLSearchParams(location.hash.split("?")[1]);
+  const editId = query.get("edit");
+  const presetDate = presetLogDate(query.get("date"), localToday());
   const { data, error } = useApi<Session>(editId ? `/sessions/${editId}` : null);
 
   if (editId && !data) {
@@ -51,11 +53,11 @@ export default function Log() {
       </div>
     );
   }
-  return <SessionForm session={data} />;
+  return <SessionForm session={data} presetDate={presetDate} />;
 }
 
-function SessionForm({ session }: { session: Session | null }) {
-  const [date, setDate] = useState(session?.date ?? localToday());
+function SessionForm({ session, presetDate }: { session: Session | null; presetDate: string | null }) {
+  const [date, setDate] = useState(session?.date ?? presetDate ?? localToday());
   const [type, setType] = useState<string | null>(session?.type ?? null);
   const [duration, setDuration] = useState(session?.duration_min ?? 90);
   const [rpe, setRpe] = useState<number | null>(session?.rpe ?? null);
@@ -124,7 +126,8 @@ function SessionForm({ session }: { session: Session | null }) {
         afterSave(result, "#/today");
       }
     } catch (e) {
-      alert((e as Error).message);
+      // The form keeps what was entered, so the climber can fix it or try again.
+      alert(`Session not saved: ${(e as Error).message}`);
     } finally {
       setBusy(false);
     }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isQueued, savedToast, send, toast, useApi } from "../api";
 import { Card, Chips, Field, PageHeader, Stepper, range, seconds } from "../components/ui";
 import { localToday } from "../dates";
-import { Beeper, PHASE_LABEL, ScreenLock, activeSeconds, buildPhases, clock, sessionMinutes, totalSeconds } from "../timer";
+import { Beeper, PHASE_LABEL, type RunSaveState, ScreenLock, activeSeconds, buildPhases, clock, doneMessage, sessionMinutes, totalSeconds } from "../timer";
 import type { Preset } from "../types";
 import { effortHint } from "./Log";
 import { isWarmupPreset } from "../../worker/warmup";
@@ -350,10 +350,13 @@ interface HangSaved {
 // The run is saved straight away. A training run is a hang log plus a hangboard session (so it always counts
 // toward training load) with a default effort; picking an effort here updates that session. A warm-up for that
 // day's climbing (#50) is a hang log only, marked warmup: part of the climbing session, no session of its own.
-// Warm-up presets start as warm-ups, the others as training; switching here works offline too.
+// Warm-up presets start as warm-ups, the others as training; switching here works offline too. Done (#83)
+// waits for every write, then confirms what was stored and closes; if the run couldn't be stored it stays
+// open with the error and saves again (same client_id, so a save that did reach the server isn't doubled).
 function Finished({ result, onClose }: { result: Result; onClose: () => void }) {
   const { preset, completed, planned, elapsedSec, activeSec, stoppedEarly } = result;
-  const [saved, setSaved] = useState<"saving" | "saved" | "queued" | "skipped" | "error">(completed > 0 ? "saving" : "skipped");
+  const [saved, setSaved] = useState<RunSaveState>(completed > 0 ? "saving" : "skipped");
+  const [closing, setClosing] = useState(false);
   const [rpe, setRpe] = useState<number | null>(null);
   const [mode, setMode] = useState<"warmup" | "training">(isWarmupPreset(preset.name) ? "warmup" : "training");
   const key = useRef(crypto.randomUUID()); // the hang log's client_id; the session's is derived from it
@@ -361,10 +364,14 @@ function Finished({ result, onClose }: { result: Result; onClose: () => void }) 
   const chain = useRef<Promise<unknown>>(Promise.resolve());
   const minutes = sessionMinutes(activeSec);
   const posted = useRef(false);
+  const modeRef = useRef(mode); // the mode a retried insert uses
+  modeRef.current = mode;
+  const stateRef = useRef<RunSaveState>(saved); // the insert's latest outcome, read after awaiting the chain
+  const failedWrite = useRef<(() => Promise<unknown>) | null>(null); // a follow-up write that failed, retried by Done
 
-  useEffect(() => {
-    if (completed === 0 || posted.current) return;
-    posted.current = true;
+  // Resolves to the run's save state once the insert has finished.
+  function postRun(): Promise<RunSaveState> {
+    setSaved("saving");
     const insert = send<HangSaved>(
       "POST",
       "/hangs",
@@ -381,24 +388,74 @@ function Finished({ result, onClose }: { result: Result; onClose: () => void }) 
         grip: preset.grip,
         added_kg: preset.added_kg,
         duration_min: minutes,
-        warmup: mode === "warmup",
+        warmup: modeRef.current === "warmup",
       },
       key.current,
-    )
-      .then((r) => {
-        if (isQueued(r)) return setSaved("queued");
-        setSaved("saved");
+    ).then(
+      (r): RunSaveState => {
+        if (isQueued(r)) return "queued";
         if (r.session) setRpe((v) => v ?? r.session!.rpe);
-      })
-      .catch(() => setSaved("error"));
-    chain.current = insert;
+        return "saved";
+      },
+      (): RunSaveState => "error",
+    );
+    const done = insert.then((state) => {
+      stateRef.current = state;
+      setSaved(state);
+      return state;
+    });
+    chain.current = done;
+    return done;
+  }
+
+  useEffect(() => {
+    if (completed === 0 || posted.current) return;
+    posted.current = true;
+    void postRun();
   }, []);
+
+  async function finishRun() {
+    if (completed === 0) return onClose();
+    setClosing(true);
+    try {
+      await chain.current; // the insert and any effort / warm-up change
+      let state = stateRef.current;
+      if (state === "error") state = await postRun();
+      if (state !== "error" && failedWrite.current) {
+        try {
+          await failedWrite.current(); // the last effort / warm-up change that didn't go through
+          failedWrite.current = null;
+        } catch {
+          // still failing: reported below
+        }
+      }
+      const message = doneMessage(state, modeRef.current, minutes);
+      if (message === null || failedWrite.current) {
+        toast("Couldn't save this run - check your connection and tap Save again", undefined, 6000);
+        return;
+      }
+      toast(message);
+      // A training run is done: its session can start the coach review. Queued offline like the other writes.
+      if (modeRef.current === "training" && state !== "skipped") {
+        send("POST", `/hangs/by-key/${key.current}/done`).catch(() => undefined);
+      }
+      onClose();
+    } finally {
+      setClosing(false);
+    }
+  }
 
   // Each write goes after the previous one; its failure is shown but doesn't block the next.
   function afterInsert(write: () => Promise<unknown>, done: string) {
     chain.current = chain.current.then(write).then(
-      (r) => savedToast(r, done),
-      (e) => toast((e as Error).message),
+      (r) => {
+        failedWrite.current = null;
+        savedToast(r, done);
+      },
+      (e) => {
+        failedWrite.current = write;
+        toast((e as Error).message);
+      },
     );
   }
 
@@ -422,6 +479,7 @@ function Finished({ result, onClose }: { result: Result; onClose: () => void }) 
   }
 
   const canAdjust = saved !== "error" && saved !== "skipped";
+  const doneLabel = saved === "error" ? "Save again" : saved === "skipped" ? "Back to timer" : "Save and close";
 
   return (
     <div className="page">
@@ -461,9 +519,14 @@ function Finished({ result, onClose }: { result: Result; onClose: () => void }) 
           )}
         </Card>
       )}
-      <button className="btn primary block" onClick={onClose}>
-        Back to timer
+      <button className="btn primary block" disabled={closing} onClick={finishRun}>
+        {closing ? "Saving…" : doneLabel}
       </button>
+      {saved === "error" && (
+        <button className="btn block" onClick={onClose}>
+          Discard
+        </button>
+      )}
     </div>
   );
 }

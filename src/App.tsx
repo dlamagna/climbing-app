@@ -2,6 +2,7 @@ import { type ComponentType, useEffect, useState } from "react";
 import { type ToastMessage, checkToken, flushOutbox, get, getToken, pendingCount, send, setToken, toast } from "./api";
 import Benchmarks from "./pages/Benchmarks";
 import CheckinEdit from "./pages/CheckinEdit";
+import Coach from "./pages/Coach";
 import Feedback from "./pages/Feedback";
 import GradeProgress from "./pages/GradeProgress";
 import Grades from "./pages/Grades";
@@ -19,6 +20,7 @@ const ROUTES: Record<string, ComponentType> = {
   log: Log,
   checkin: CheckinEdit,
   timer: Timer,
+  coach: Coach,
   history: History,
   more: More,
   plan: Plan,
@@ -34,6 +36,7 @@ const TABS = [
   { route: "today", label: "Today", icon: "◉" },
   { route: "log", label: "Log", icon: "+" },
   { route: "timer", label: "Timer", icon: "◷" },
+  { route: "coach", label: "Coach", icon: "✦" },
   { route: "history", label: "History", icon: "▤" },
   { route: "more", label: "More", icon: "≡" },
 ];
@@ -57,8 +60,10 @@ function usePath() {
 
 // Replays queued offline writes and keeps the server's idea of "today" in the phone's timezone.
 async function sync() {
-  const sent = await flushOutbox();
-  if (sent) toast(`Synced ${sent} offline ${sent === 1 ? "entry" : "entries"}`);
+  const { sent, dropped, error } = await flushOutbox();
+  const entries = (n: number) => `${n} offline ${n === 1 ? "entry" : "entries"}`;
+  if (dropped) toast(`${sent ? `Synced ${entries(sent)}, but ` : ""}${entries(dropped)} couldn't be saved: ${error}`, undefined, 10000);
+  else if (sent) toast(`Synced ${entries(sent)}`);
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const profile = await get<Record<string, string>>("/profile");

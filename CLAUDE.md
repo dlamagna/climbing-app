@@ -19,6 +19,6 @@ Personal data includes anything read through `get_overview` or `query`, or from 
 
 ## Git
 
-- Commit with the GitHub noreply address (`191261820+dlamagna@users.noreply.github.com`), never a personal email. This repo's git config sets it.
+- Claude sessions commit as `Claude <noreply@anthropic.com>` (they sign those commits, so GitHub shows them as Verified). Otherwise commit with the GitHub noreply address (`191261820+dlamagna@users.noreply.github.com`). Never a personal email.
 - `main` is protected: changes go through a pull request, and CI's `build` check must pass. Merging to `main` deploys to Cloudflare.
 - Run wrangler as `env -u CLOUDFLARE_API_TOKEN npx wrangler ...` locally. The shell exports a token for another project that overrides the wrangler login.

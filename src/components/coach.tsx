@@ -1,12 +1,13 @@
-// The daily coach review on the Today screen (#52): questions to answer with a tap, and what the last review
+// The daily coach review on the Coach tab (#52, #80): questions to answer with a tap, and what the last review
 // changed. Answers go through the offline outbox like other writes and reach the coach on its next run. The
 // weekly "which days will you climb" question (#54) also opens as a pop-up.
 import { useState } from "react";
 import { savedToast, send } from "../api";
 import { addDays, dayLabel, localDateOf, shortDay } from "../dates";
 import { popupsEnabled } from "../prefs";
-import { NO_CLIMBING, climbingDaysBody, isWeekly, multiAnswer, plannerDays, togglePick } from "../coachAnswers";
+import { MAX_COACH_NOTE, NO_CLIMBING, climbingDaysBody, coachNoteBody, isWeekly, multiAnswer, plannerDays, togglePick } from "../coachAnswers";
 import type { CoachQuestion, CoachRun } from "../types";
+import { StepList } from "./StepList";
 import { Card } from "./ui";
 
 export function CoachQuestions({ questions, onAnswered }: { questions: CoachQuestion[]; onAnswered: (id: number) => void }) {
@@ -239,9 +240,8 @@ export function CoachUpdate({ run, today }: { run: CoachRun; today: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div className="coach-update">
-      <p className="small">
-        <span className="muted">Daily review · {dayLabel(localDateOf(run.created_at), today)}:</span> {run.summary}
-      </p>
+      <p className="muted small">{dayLabel(localDateOf(run.created_at), today)}</p>
+      <StepList text={run.summary} className="steps small" />
       {run.changes.length > 0 &&
         (open ? (
           <ul className="mini-list small">
@@ -254,6 +254,58 @@ export function CoachUpdate({ run, today }: { run: CoachRun; today: string }) {
             What changed ({run.changes.length})
           </button>
         ))}
+    </div>
+  );
+}
+
+// Free-text context for the coach (#65), sent from the Coach tab. Stored, and handed to the next daily review.
+export function NoteToCoach({ onSent }: { onSent?: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const body = coachNoteBody(text);
+
+  async function submit() {
+    if (!body) return;
+    setBusy(true);
+    try {
+      savedToast(await send("POST", "/coach/notes", body), "Sent - the coach reads it in the next daily review");
+      setText("");
+      setOpen(false);
+      onSent?.();
+    } catch (e) {
+      alert((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button className="btn block" onClick={() => setOpen(true)}>
+        Send a note to the coach
+      </button>
+    );
+  }
+  return (
+    <div className="form">
+        <textarea
+          rows={4}
+          maxLength={MAX_COACH_NOTE}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Anything the coach should know, e.g. a busy week coming up or a goal you want to focus on"
+          autoFocus
+        />
+        <p className="muted small">Used in the next daily review.</p>
+        <div className="actions">
+          <button className="btn" onClick={() => setOpen(false)} disabled={busy}>
+            Cancel
+          </button>
+          <button className="btn primary" onClick={submit} disabled={busy || !body}>
+            Send
+          </button>
+        </div>
     </div>
   );
 }

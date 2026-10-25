@@ -372,6 +372,29 @@ button {
   gap: 4px;
   flex: 1;
 }
+.steps,
+.plan-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+  color: var(--muted);
+}
+.steps {
+  color: var(--text);
+  font-size: 15px;
+  gap: 4px;
+}
+.steps.small {
+  font-size: 13px;
+}
+.steps strong,
+.plan-steps strong {
+  color: var(--text);
+  font-weight: 600;
+}
 .plan-title {
   display: flex;
   gap: 8px;
@@ -811,6 +834,15 @@ button {
   flex-direction: column;
   gap: 6px;
 }
+.cal-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+.cal-row a {
+  flex: 1;
+}
 .cal-list a {
   display: flex;
   align-items: center;
@@ -931,7 +963,7 @@ button {
   bottom: 0;
   z-index: 10;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(6, 1fr);
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background: color-mix(in srgb, var(--surface) 92%, transparent);
@@ -1279,4 +1311,29 @@ button {
   margin-top: 8px;
   padding-top: 8px;
   border-top: 1px solid var(--border);
+}
+
+.coach-link {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--text);
+  text-decoration: none;
+}
+.coach-link .small {
+  color: var(--accent);
+}
+.earlier-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.earlier-notes p {
+  margin: 0 0 4px;
+}
+.sent-notes {
+  margin-top: 10px;
 }

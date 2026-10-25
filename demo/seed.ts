@@ -235,6 +235,13 @@ export async function seed(db: DemoD1) {
     stamp(yesterday, "22:31"),
   );
 
+  // A note the climber sent the coach from the Coach tab, read by last night's review.
+  sql(
+    "INSERT INTO climber_notes (text, created_at) VALUES (?, ?)",
+    "Busy at work Thursday, could swap strength to Friday morning",
+    stamp(yesterday, "19:00"),
+  );
+
   // App feedback: one already triaged into an issue by the review, one still new.
   sql(
     "INSERT INTO app_feedback (text, status, issue_number, reply, handled_at, created_at) VALUES (?, 'filed', 42, ?, ?, ?)",

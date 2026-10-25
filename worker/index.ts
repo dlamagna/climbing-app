@@ -22,8 +22,11 @@ import {
   upsertCheckin,
 } from "./db";
 import { parseExpectedBenchmarks, sessionBenchmarkWrites } from "./benchmarks";
-import { addFeedback, answerQuestion, listFeedback, setClimbingDays } from "./coach";
-import { BadRequest } from "./errors";
+import { addClimberNote, addFeedback, answerQuestion, coachActivity, deleteFeedback, editFeedback, listClimberNotes, listFeedback, setClimbingDays } from "./coach";
+import { BadRequest, NotFound } from "./errors";
+import { withIssueStatus } from "./github";
+import { isRoutineName, routinesAvailable } from "./routines";
+import { autoStartStatus, startAfterWrite, startFromApp } from "./autoStart";
 import { buildExport, exportFilename, quoteIdent, toCsv, userTables } from "./export";
 import {
   type InjuryUpdate,
@@ -123,19 +126,40 @@ app.onError((err, c) => {
   return c.json({ error: "Internal error" }, 500);
 });
 
+// After a successful write: a newly logged session starts the coach review, and the review's
+// record_coach_run starts the issue worker (worker/autoStart.ts). Runs after the response, so it never slows
+// down or fails the write. The timer's Save and close names its run, so that session starts it straight away.
+const TIMER_DONE = /\/hangs\/by-key\/([^/]+)\/done$/;
+const afterWrite = (c: C) => {
+  if (c.req.method === "GET" || !c.res.ok) return;
+  const timerKey = c.req.path.match(TIMER_DONE)?.[1];
+  c.executionCtx.waitUntil(
+    startAfterWrite(c.env, new Date(), timerKey ? decodeURIComponent(timerKey) : undefined).catch((e) =>
+      console.error("auto start failed", e),
+    ),
+  );
+};
+
 // MCP: the token can go in the path (claude.ai connectors only take a URL) or as a bearer header.
-app.all("/mcp/:token", async (c) =>
-  tokenMatches(c.req.param("token"), c.env.MCP_TOKEN) ? handleMcp(c.req.raw, c.env) : c.text("Unauthorized", 401),
-);
-app.all("/mcp", async (c) =>
-  tokenMatches(bearer(c), c.env.MCP_TOKEN) ? handleMcp(c.req.raw, c.env) : c.text("Unauthorized", 401),
-);
+app.all("/mcp/:token", async (c) => {
+  if (!tokenMatches(c.req.param("token"), c.env.MCP_TOKEN)) return c.text("Unauthorized", 401);
+  c.res = await handleMcp(c.req.raw, c.env);
+  afterWrite(c);
+  return c.res;
+});
+app.all("/mcp", async (c) => {
+  if (!tokenMatches(bearer(c), c.env.MCP_TOKEN)) return c.text("Unauthorized", 401);
+  c.res = await handleMcp(c.req.raw, c.env);
+  afterWrite(c);
+  return c.res;
+});
 
 const api = new Hono<{ Bindings: Env }>();
 
 api.use("*", async (c: C, next: Next) => {
   if (!tokenMatches(bearer(c), c.env.APP_TOKEN)) return c.json({ error: "Unauthorized" }, 401);
   await next();
+  afterWrite(c);
 });
 
 api.get("/today", async (c) => c.json(await todayView(c.env.DB, dateParam(c, "date"))));
@@ -251,6 +275,10 @@ api.delete("/hangs/by-key/:key/session", async (c) => {
 });
 
 // The finished screen's warm-up / training choice (#50): {warmup: true} or {warmup: false, duration_min}.
+// Save and close on the timer's finished screen, for a run kept as a training session: the climber is done
+// with it, so its session can start the coach review (handled after the response, in afterWrite).
+api.post("/hangs/by-key/:key/done", (c) => c.json({ ok: true }));
+
 api.put("/hangs/by-key/:key/warmup", async (c) => {
   const { warmup, duration_min } = await c.req.json();
   if (typeof warmup !== "boolean") throw new BadRequest("warmup must be true or false");
@@ -379,6 +407,25 @@ api.put("/coach/questions/:id", async (c) => {
   return c.json(await answerQuestion(c.env.DB, Number(c.req.param("id")), await c.req.json(), today));
 });
 
+// Notes to the coach (#65): free text sent from Today; the next daily review reads them.
+api.get("/coach/notes", async (c) => c.json(await listClimberNotes(c.env.DB)));
+api.post("/coach/notes", async (c) => c.json({ id: await addClimberNote(c.env.DB, await c.req.json(), clientId(c)) }));
+
+// Coach activity for Settings (#64): last run, when the next one is expected, and past runs. `auto` says
+// whether logged sessions start the review (worker/autoStart.ts) and when the next one is due.
+api.get("/coach/runs", async (c) =>
+  c.json({ ...(await coachActivity(c.env.DB, Number(c.req.query("limit") ?? 30))), auto: await autoStartStatus(c.env) }),
+);
+
+// Start the coach review or the issue worker now, from Coach → Coach activity (needs the routine's
+// API trigger secrets; see worker/routines.ts). The same triggers start them after a logged session.
+api.get("/coach/routines", (c) => c.json(routinesAvailable(c.env)));
+api.post("/coach/routines/:name/run", async (c) => {
+  const name = c.req.param("name");
+  if (!isRoutineName(name)) throw new NotFound(`No routine "${name}"`);
+  return c.json(await startFromApp(c.env, name));
+});
+
 // Climbing days picked with Today's "Plan my climbing days" button (#56): { days: [dates], note }.
 api.put("/coach/climbing-days", async (c) => {
   const today = todayIn((await getProfile(c.env.DB)).timezone);
@@ -386,8 +433,16 @@ api.put("/coach/climbing-days", async (c) => {
 });
 
 // App feedback (#52): typed in the app, triaged into GitHub issues by the daily coach review.
-api.get("/feedback", async (c) => c.json(await listFeedback(c.env.DB)));
+api.get("/feedback", async (c) => c.json(await withIssueStatus(c.env, await listFeedback(c.env.DB))));
 api.post("/feedback", async (c) => c.json({ id: await addFeedback(c.env.DB, await c.req.json(), clientId(c)) }));
+api.put("/feedback/:id", async (c) => {
+  await editFeedback(c.env.DB, Number(c.req.param("id")), await c.req.json());
+  return c.json({ ok: true });
+});
+api.delete("/feedback/:id", async (c) => {
+  await deleteFeedback(c.env.DB, Number(c.req.param("id")));
+  return c.json({ ok: true });
+});
 
 api.get("/benchmarks", async (c) => {
   const { results } = await c.env.DB.prepare("SELECT * FROM benchmarks ORDER BY date DESC, id DESC").all();

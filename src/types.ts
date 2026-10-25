@@ -121,7 +121,7 @@ export interface CoachNote {
   text: string;
 }
 
-// Questions the daily coach review asks (worker/coach.ts); the Today screen shows the open ones.
+// Questions the daily coach review asks (worker/coach.ts); the Coach tab shows the open ones.
 export interface CoachQuestion {
   id: number;
   question: string;
@@ -142,12 +142,39 @@ export interface CoachRun {
   created_at: string; // UTC timestamp
 }
 
+// Settings' coach activity (GET /coach/runs, #64). The next run is an estimate: one interval after the last.
+export interface CoachActivity {
+  last_run: CoachRun | null;
+  next_run_expected: string | null; // UTC timestamp
+  interval_hours: number;
+  runs: CoachRun[]; // newest first
+  auto?: AutoStart; // missing from servers older than automatic starts
+}
+
+// Starting the review (then the issue worker) when a session is logged (worker/autoStart.ts).
+export interface AutoStart {
+  enabled: boolean;
+  worker: boolean;
+  last: {
+    routine: "review" | "worker";
+    status: "starting" | "started" | "failed" | "skipped";
+    error: string | null;
+    session_url: string | null;
+    created_at: string;
+  } | null;
+}
+
+export type FeedbackPriority = "P0" | "P1" | "P2";
+
 export interface AppFeedback {
   id: number;
   text: string;
   status: "new" | "filed" | "duplicate" | "declined";
+  priority: FeedbackPriority | null; // picked when sending (#68); null = left to the coach review
   issue_number: number | null;
   issue_url: string | null;
+  // Where the linked issue stands (#70); null when there's no issue or GitHub couldn't be reached.
+  issue_status: "open" | "merged" | "deploying" | "live" | "closed" | null;
   reply: string | null;
   created_at: string; // UTC timestamp
 }
@@ -220,3 +247,9 @@ export const typeLabel = (t: string | null) => SESSION_TYPES.find((s) => s.value
 
 // Groups for the History calendar and mix (rope / boulder / fingers / other); defined once in worker/typeGroups.ts.
 export { TYPE_GROUPS, type GroupKey, groupOf, groupInfo } from "../worker/typeGroups";
+
+// Which coach routines can be started from the app (#73).
+export interface CoachRoutines {
+  review: boolean;
+  worker: boolean;
+}

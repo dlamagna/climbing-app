@@ -29,3 +29,11 @@ export function climbingDaysBody(picked: string[], note: string): { days: string
   if (!days.length && !picked.includes(NO_CLIMBING)) return null;
   return { days, note: note.trim() || null };
 }
+
+// A note to the coach (#65), as POST /coach/notes takes it; null when there is nothing to send. The limit
+// matches the worker's.
+export const MAX_COACH_NOTE = 2000;
+export function coachNoteBody(text: string): { text: string } | null {
+  const t = text.trim();
+  return t && t.length <= MAX_COACH_NOTE ? { text: t } : null;
+}

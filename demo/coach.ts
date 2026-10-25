@@ -41,10 +41,10 @@ export const EXAMPLES: Example[] = [
 
 ${TODAY_NOTE}
 
-I saved this as today's coach note, so it's on your Today screen.`;
+I saved this as today's coach note, so it's on your Coach tab.`;
     },
-    open: "today",
-    openLabel: "See it on Today",
+    open: "coach",
+    openLabel: "See it on the Coach tab",
   },
   {
     prompt: "Plan my next week around the finger",
@@ -108,10 +108,10 @@ The Saturday test is attached to the plan, so the app asks for the result when y
       const filed = r[1] ? " It also filed your app feedback as an issue (see More → App feedback)." : "";
       return `The review runs by itself every evening. It looks at what changed since the last run. This time: ${why}.
 
-It left a summary at the top of Today and asked you one question there; your answer goes to the next review.${filed}`;
+It left a summary on the Coach tab and asked you one question there; your answer goes to the next review.${filed}`;
     },
-    open: "today",
-    openLabel: "See it on Today",
+    open: "coach",
+    openLabel: "See it on the Coach tab",
   },
   {
     prompt: "Does sleep change how my sessions go?",

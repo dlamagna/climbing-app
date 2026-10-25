@@ -119,3 +119,13 @@ export class ScreenLock {
     this.lock = null;
   }
 }
+
+// The end-of-run screen's Done button (#83): the confirmation once every write for the run has finished.
+// null while the run isn't stored (the screen stays open with a retry).
+export type RunSaveState = "saving" | "saved" | "queued" | "skipped" | "error";
+export function doneMessage(state: RunSaveState, mode: "warmup" | "training", minutes: number): string | null {
+  if (state === "error" || state === "saving") return null;
+  if (state === "skipped") return "Nothing saved - no hangs completed";
+  const what = mode === "warmup" ? "Saved as a warm-up for today's climbing" : `Saved as a ${minutes} min hangboard session`;
+  return state === "queued" ? `${what} offline - will sync later` : what;
+}

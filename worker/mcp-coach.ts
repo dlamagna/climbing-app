@@ -1,5 +1,5 @@
 // MCP tools for the daily coach review (#52): start_daily_review (what changed since the last run, plus the
-// review steps), ask_question / close_questions (questions shown on the app's Today screen) and
+// review steps), ask_question / close_questions (questions shown on the app's Coach tab) and
 // record_coach_run (logs the run; its seen_through is where the next one starts), and resolve_feedback (what
 // was done with feedback typed in the app). Logic is in worker/coach.ts.
 
@@ -33,7 +33,7 @@ export const COACH_TOOLS: Tool[] = [
   },
   {
     name: "ask_question",
-    description: `Ask the climber something the data can't tell you; it shows as a card on the app's Today screen until answered, skipped or expired, and the answer comes back in start_daily_review / get_overview. Give 2-${MAX_OPTIONS} short options to tap when you can. At most ${MAX_OPEN_QUESTIONS} open at once; asking the same open question again returns the existing one.`,
+    description: `Ask the climber something the data can't tell you; it shows as a card on the app's Coach tab until answered, skipped or expired, and the answer comes back in start_daily_review / get_overview. Give 2-${MAX_OPTIONS} short options to tap when you can. At most ${MAX_OPEN_QUESTIONS} open at once; asking the same open question again returns the existing one.`,
     inputSchema: {
       type: "object",
       properties: {
@@ -89,7 +89,7 @@ export const COACH_TOOLS: Tool[] = [
       type: "object",
       properties: {
         outcome: { type: "string", enum: RUN_OUTCOMES, description: "'updated' if you changed the plan, notes, profile or questions, else 'no_change'" },
-        summary: { type: "string", description: "One or two short lines the climber reads in the app" },
+        summary: { type: "string", description: "One or two short lines the climber reads in the app, separated by a newline (shown as bullets)" },
         changes: { type: "array", items: { type: "string" }, description: "What changed, one short item each" },
         seen_through: { type: "string", description: "checked_at from start_daily_review (UTC, e.g. 2026-01-31T21:00:00Z)" },
       },

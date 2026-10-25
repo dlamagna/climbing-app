@@ -19,8 +19,16 @@ const MIGRATIONS = Object.entries(import.meta.glob("../migrations/*.sql", { quer
 // The worker app (Hono). Loaded through a glob so the demo's type check doesn't pull in the worker, which is
 // checked against the Workers types by worker/tsconfig.json.
 interface WorkerApp {
-  fetch(req: Request, env: unknown): Response | Promise<Response>;
+  fetch(req: Request, env: unknown, ctx: unknown): Response | Promise<Response>;
 }
+
+// Stands in for the Workers ExecutionContext: work the worker hands to waitUntil (the after-write routine
+// start, a no-op here without its secrets) just runs in the background.
+const ctx = {
+  waitUntil: (p: Promise<unknown>) => void p.catch((e) => console.warn("background task failed", e)),
+  passThroughOnException: () => {},
+  props: {},
+};
 const loadWorker = import.meta.glob<{ default: WorkerApp }>("../worker/index.ts");
 
 // Cloudflare-only API the worker uses to compare tokens.
@@ -86,7 +94,7 @@ export async function startBackend(): Promise<DemoBackend> {
   let rpcId = 0;
 
   return {
-    fetch: async (req) => app.fetch(req, env()),
+    fetch: async (req) => app.fetch(req, env(), ctx),
     async mcp(tool, args = {}) {
       const res = await app.fetch(
         new Request(`${location.origin}/mcp`, {
@@ -95,6 +103,7 @@ export async function startBackend(): Promise<DemoBackend> {
           body: JSON.stringify({ jsonrpc: "2.0", id: ++rpcId, method: "tools/call", params: { name: tool, arguments: args } }),
         }),
         env(),
+        ctx,
       );
       const reply = (await res.json()) as { result?: { content: { text: string }[]; isError?: boolean }; error?: { message: string } };
       if (reply.error) throw new Error(reply.error.message);
@@ -117,12 +126,15 @@ export async function startBackend(): Promise<DemoBackend> {
   };
 }
 
-// Sends the app's /api calls to the in-browser worker instead of the network.
+// Sends the app's /api calls to the in-browser worker instead of the network. Requests to anywhere else
+// (GitHub, Claude routines: features that need secrets the demo doesn't have) are refused outright, so the
+// demo never sends anything off the page even if a feature's own check is missed.
 export function interceptFetch(backend: DemoBackend) {
   const real = window.fetch.bind(window);
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = new URL(input instanceof Request ? input.url : String(input), location.origin);
-    if (url.origin !== location.origin || !/^\/(api|mcp)(\/|$)/.test(url.pathname)) return real(input, init);
+    const url = new URL(input instanceof Request ? input.url : String(input), location.href);
+    if (url.origin !== location.origin) throw new TypeError("The demo doesn't connect to anything outside this page");
+    if (!/^\/(api|mcp)(\/|$)/.test(url.pathname)) return real(input, init);
     return backend.fetch(new Request(url, input instanceof Request ? input : init));
   };
 }

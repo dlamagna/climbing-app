@@ -54,7 +54,7 @@ claude mcp add --transport http climbing https://climbing-app.<you>.workers.dev/
 Then ask, for example:
 - "Fill in my profile: goal is …, trip on …, I can train Mon/Wed/Sat." (or fill it in under More → Profile)
 - "Write my training plan up to the trip."
-- "How should I train today?" (Claude can save the answer as a coach note on the Today screen)
+- "How should I train today?" (Claude can save the answer as a coach note on the Coach tab)
 - "How did drinking and sleep affect my sessions this month?"
 
 ### Optional: file GitHub issues from Claude
@@ -75,19 +75,45 @@ and a milestone, and are added to the checklist in the roadmap issue named by `G
 
 ### Optional: daily coach review
 
-A scheduled Claude run can review your data once a day without an API key. It runs as a Claude Code
+A Claude run can review your data after each session, or once a day on a schedule, without an API key. It runs as a Claude Code
 routine on your own Claude subscription, through the same connector. When nothing new was logged it stops
 straight away. Otherwise it:
 - adjusts the coming days of the plan around the days you picked to climb, or suggests days from your load
   when you haven't picked any
 - may leave a coach note
-- may ask you questions, shown as one-tap cards on Today
+- may ask you questions, shown as one-tap cards on the Coach tab
 - sorts feedback you sent from the app into GitHub issues
 
-You choose your climbing days with the weekly pop-up, which you can turn off in Settings, or with **Plan
-my climbing days** on Today.
+Everything coach-related lives on the **Coach** tab: questions, the latest note and review, coach
+activity, and notes you send. You choose your climbing days with the weekly pop-up (on Today; it can be
+turned off on the Coach tab) or with **Plan my climbing days** on the Coach tab.
 
 **Setup, the routine prompt, testing and troubleshooting: [docs/daily-coach-review.md](docs/daily-coach-review.md).**
+
+### Optional: run the review after each session, or from the app
+
+With the routines' API triggers set up, logging a training session starts the coach review straight away.
+When the review finishes, the issue worker (if you have one) starts too, but only when GitHub has open P0
+or P1 issues for it, and it's told to work through all of them in one run. A hangboard run counts once you
+tap Save and close with *Training session* picked; one saved as a warm-up starts nothing. Coach → Coach
+activity shows the last automatic start and can also start either routine by hand.
+
+For each routine, open it at [claude.ai/code/routines](https://claude.ai/code/routines), add an
+**API** trigger and generate a token. The token is shown once, next to the trigger's URL. Store both as
+worker secrets:
+
+```sh
+npx wrangler secret put COACH_REVIEW_FIRE_URL     # https://api.anthropic.com/v1/claude_code/routines/trig_.../fire
+npx wrangler secret put COACH_REVIEW_FIRE_TOKEN   # sk-ant-oat01-...
+npx wrangler secret put ISSUE_WORKER_FIRE_URL     # optional, same for the issue worker
+npx wrangler secret put ISSUE_WORKER_FIRE_TOKEN
+```
+
+Without them, the buttons are hidden and nothing starts automatically, so the routines need a schedule of
+their own. With them, the routines don't need a schedule: remove it, or they run on both. The issue check
+uses `GITHUB_TOKEN`; without it the worker always starts after the review. Each token can only start its
+own routine. Runs started this way count against your Claude subscription like
+scheduled ones, and each routine can be started up to 30 times an hour.
 
 ## Your data stays private
 
@@ -170,7 +196,7 @@ CI builds it on every push and deploys it to GitHub Pages from `main` (the `demo
 | `worker/grades.ts` | Grade parsing and conversion (boulder Font <-> V, route French <-> YDS), the ladder index and `get_overview`'s `grade_progress`; also the Log page's grade hint, the grade table and the hardest-grade chart (`src/grades.ts` is the app side) |
 | `worker/export.ts` | `GET /api/export` helpers: table list, CSV, filename |
 | `migrations/` | Schema and default timer presets (D1 strips SQL comments; column docs for `get_schema` live in `worker/schema-docs.ts`) |
-| `src/pages/` | Today, Log, Timer, History, Plan, Injuries, Benchmarks, Settings, Feedback, Grades (table), GradeProgress (hardest grade over time) |
+| `src/pages/` | Today, Log, Timer, Coach, History, Plan, Injuries, Benchmarks, Settings, Feedback, Grades (table), GradeProgress (hardest grade over time) |
 | `src/timer.ts` | Hangboard phase sequencing, beeps, screen wake lock |
 | `demo/` | Public demo: landing page, in-browser D1 (`d1.ts`) and backend (`backend.ts`), sample data (`seed.ts`), sample coach (`coach.ts`) |
 

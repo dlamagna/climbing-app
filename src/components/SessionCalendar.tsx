@@ -1,6 +1,7 @@
 // Month calendar of sessions (#32): one marker per session, coloured by type group with its letter.
 // Tap a day to list its sessions; each links to the session's edit page.
 import { useState } from "react";
+import { savedToast, send } from "../api";
 import { monthGrid, monthLabel, monthOf, sessionsByDay, shiftMonth } from "../calendar";
 import { dayLabel } from "../dates";
 import { type Session, groupOf, typeLabel } from "../types";
@@ -8,6 +9,7 @@ import { type Session, groupOf, typeLabel } from "../types";
 // "Top rope (outdoor)": the day's accessible label and the list both say it, not only the ring.
 const sessionLabel = (s: Session) => `${typeLabel(s.type)}${s.outdoor ? " (outdoor)" : ""}`;
 import { GroupLegend, GroupMarker } from "./typeGroups";
+import { OverflowMenu } from "./ui";
 
 const DOW = ["M", "T", "W", "T", "F", "S", "S"];
 
@@ -17,12 +19,14 @@ export function SessionCalendar({
   sessions,
   today,
   loading,
+  onChanged,
 }: {
   month: string; // YYYY-MM
   onMonth: (month: string) => void;
   sessions: Session[];
   today: string;
   loading?: boolean;
+  onChanged?: () => void; // after a delete, so the page refetches
 }) {
   const [picked, setPicked] = useState<string | null>(today);
   const days = sessionsByDay(sessions, month);
@@ -34,6 +38,16 @@ export function SessionCalendar({
     onMonth(next);
     setPicked(next === current ? today : null);
   };
+
+  async function remove(id: number) {
+    if (!confirm("Delete this session? This can't be undone.")) return;
+    try {
+      savedToast(await send("DELETE", `/sessions/${id}`), "Deleted");
+      onChanged?.();
+    } catch (e) {
+      alert((e as Error).message);
+    }
+  }
 
   return (
     <div className="viz">
@@ -80,15 +94,29 @@ export function SessionCalendar({
           <strong className="small">{dayLabel(picked!, today)}</strong>
           {pickedList.length === 0 && <p className="muted small">No sessions logged.</p>}
           {pickedList.map((s) => (
-            <a key={s.id} href={`#/log?edit=${s.id}`} aria-label={`Edit ${sessionLabel(s)} session`}>
-              <GroupMarker group={groupOf(s.type)} outdoor={Boolean(s.outdoor)} />
-              <span>
-                <strong>{typeLabel(s.type)}</strong> {s.duration_min} min{s.outdoor ? " · outdoor" : ""}{s.gym ? ` · ${s.gym}` : ""} · effort {s.rpe}
-                {s.max_grade && ` · ${s.max_grade}`}
-                <span className="muted"> · load {s.duration_min * s.rpe}</span>
-              </span>
-            </a>
+            <div key={s.id} className="cal-row">
+              <a href={`#/log?edit=${s.id}`} aria-label={`Edit ${sessionLabel(s)} session`}>
+                <GroupMarker group={groupOf(s.type)} outdoor={Boolean(s.outdoor)} />
+                <span>
+                  <strong>{typeLabel(s.type)}</strong> {s.duration_min} min{s.outdoor ? " · outdoor" : ""}{s.gym ? ` · ${s.gym}` : ""} · effort {s.rpe}
+                  {s.max_grade && ` · ${s.max_grade}`}
+                  <span className="muted"> · load {s.duration_min * s.rpe}</span>
+                </span>
+              </a>
+              <OverflowMenu
+                label={`${sessionLabel(s)} session options`}
+                items={[
+                  { label: "Edit", onSelect: () => (location.hash = `#/log?edit=${s.id}`) },
+                  { label: "Delete", danger: true, onSelect: () => remove(s.id) },
+                ]}
+              />
+            </div>
           ))}
+          {picked! <= today && (
+            <a className="link" href={`#/log?date=${picked}`}>
+              + Add a session on this day
+            </a>
+          )}
         </div>
       )}
     </div>

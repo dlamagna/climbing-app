@@ -137,7 +137,7 @@ again against the new entries, so already-logged days keep showing what happened
 coach entries without a status picked by hand.
 
 Daily coach review: a scheduled run (the daily_review prompt) calls start_daily_review and follows its
-instructions. Questions for the climber go through ask_question (shown on the app's Today screen, answered with
+instructions. Questions for the climber go through ask_question (shown on the app's Coach tab, answered with
 a tap); get_overview's coach.answered_questions are answers not used yet: use them (lasting facts to the
 profile), then close_questions. coach.last_run is the last review. coach.climbing_days is the climber's latest
 pick of climbing days (from the weekly question or the app's "Plan my climbing days"): plan climbing on those
@@ -185,7 +185,8 @@ If report_issue is available, it files issues on the app's own GitHub repo: feat
 this app, never training notes or personal data (the repo is public). Call list_issues first to avoid
 duplicates, and write the issue so a developer can act on it. Give it a priority (${PRIORITY_TEXT}) and a
 milestone when one fits; it is added to the roadmap issue. App feedback the climber typed in the app arrives
-in start_daily_review's changes.new_feedback; record what you did with each one with resolve_feedback.`;
+in start_daily_review's changes.new_feedback, with the priority the climber picked (null = not picked, choose
+one); record what you did with each one with resolve_feedback.`;
 
 function readOnlySql(sql: string): string {
   const s = sql.trim().replace(/;\s*$/, "");
@@ -283,7 +284,11 @@ const TOOLS: Tool[] = [
               title: { type: "string", description: "Short, e.g. 'Limit bouldering' or 'Rest'" },
               type: { type: "string", enum: [...SESSION_TYPES, "rest"] },
               intensity: { type: "string", enum: ["rest", "easy", "moderate", "hard"] },
-              details: { type: "string", description: "The actual workout: warm-up, sets, grades, times" },
+              details: {
+                type: "string",
+                description:
+                  "The actual workout as short lines, one per block, separated by newlines (the app shows each line as a bullet). Start each with a short label and a colon, e.g. 'Warm-up 15 min: easy routes'. Keep each line under ~80 characters; no prose or repeated advice.",
+              },
               duration_min: { type: "integer", minimum: 1, description: "Planned length; a much shorter session counts as partial" },
               expected_benchmarks: {
                 type: "array",
@@ -330,7 +335,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "add_coach_note",
-    description: "Save a recommendation so it shows on the app's Today screen. Keep it short and scannable on a phone.",
+    description: "Save a recommendation so it shows on the app's Coach tab. Write 2-4 short lines, one point each, separated by newlines: the app shows each line as a bullet.",
     inputSchema: {
       type: "object",
       properties: { text: { type: "string" }, date: { ...dateSchema, description: "Defaults to today" } },
@@ -471,7 +476,7 @@ const TOOLS: Tool[] = [
         title: { type: "string", description: "Short and specific, e.g. 'Rest timer should vibrate on Android'" },
         body: { type: "string", description: "Markdown: what and why, and where in the app if known" },
         labels: { type: "array", items: { type: "string", enum: ISSUE_LABELS } },
-        priority: { type: "string", enum: PRIORITIES, description: `Adds a priority label: ${PRIORITY_TEXT}` },
+        priority: { type: "string", enum: PRIORITIES, description: `Adds a priority label: ${PRIORITY_TEXT}. P2 also adds the backlog label and lists it under the roadmap's backlog section` },
         milestone: { type: "string", description: "Title of an open milestone (from list_issues), e.g. for when it should be done" },
         add_to_roadmap: { type: "boolean", default: true, description: "List it in the pinned roadmap issue, under its milestone's section" },
       },
