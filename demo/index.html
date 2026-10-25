@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101216" />
+    <meta name="description" content="A climbing training log for the phone, with Claude as the coach. Try it with sample data." />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <title>Climb Log demo</title>
+  </head>
+  <body>
+    <div class="wrap">
+      <header class="top">
+        <span class="brand"><img src="./icon.svg" alt="" width="28" height="28" /> Climb Log</span>
+        <span class="badge">Demo · sample data</span>
+        <a class="gh" href="https://github.com/dlamagna/climbing-app">Source on GitHub</a>
+      </header>
+
+      <div class="layout">
+        <div class="story">
+          <section class="hero">
+            <h1>A training log that coaches you back.</h1>
+            <p class="lede">
+              Three taps every morning, sessions logged in seconds, a hangboard timer and injury tracking. Claude
+              reads it all, writes your plan and adjusts it every night.
+            </p>
+            <a class="cta phone-only" href="./app.html">Open the demo app</a>
+            <p class="hint desktop-only">The phone on the right is the real app. Tap around, or pick a feature below.</p>
+            <p class="small">
+              Made-up climber, made-up data, stored only in your browser. Change anything you like;
+              <button class="link reset">reset</button> puts it back.
+            </p>
+          </section>
+
+          <section>
+            <h2>What's in it</h2>
+            <div class="features" id="features"></div>
+          </section>
+
+          <section>
+            <h2>The coach</h2>
+            <p class="section-lede">
+              In real use Claude connects to the app as a custom connector on a normal Claude plan, so there are no
+              API costs. It reads the log, gives a concrete session for the day, rewrites the plan and leaves notes
+              and questions on the Today screen. Here are some pre-written samples (no AI runs in this demo):
+            </p>
+            <div class="desktop-only coach-panel" id="coach"></div>
+            <a class="cta secondary phone-only" href="./app.html?coach">Try the sample coach</a>
+          </section>
+
+          <section>
+            <h2>How it runs</h2>
+            <div class="how">
+              <div><strong>Phone first</strong><span>A home-screen web app. Works offline in the gym basement and syncs later.</span></div>
+              <div><strong>Free to host</strong><span>One Cloudflare Worker and a SQLite database on the free tier.</span></div>
+              <div><strong>Your data</strong><span>Your own database, with a one-tap export to JSON or CSV.</span></div>
+            </div>
+          </section>
+
+          <footer class="foot">
+            Open source (MIT). This demo runs the app's real code in your browser with sample data; nothing is sent anywhere.
+          </footer>
+        </div>
+
+        <aside class="device desktop-only">
+          <div class="phone">
+            <iframe id="app" title="Climb Log demo app"></iframe>
+          </div>
+          <div class="device-actions">
+            <a href="./app.html" target="_blank" rel="noopener">Open full screen ↗</a>
+            <button class="link reset">Reset demo data</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+    <script type="module" src="./landing.ts"></script>
+  </body>
+</html>

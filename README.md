@@ -135,6 +135,27 @@ npm run dev              # optional: Vite hot reload on :5173, proxying /api to 
 
 Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:local`. Merging to `main` applies it remotely.
 
+## Public demo
+
+`demo/` is a version you can send to people: the same app and worker code running entirely in the browser,
+on a made-up climber's sample data. The worker's Hono app answers `/api` and `/mcp` calls inside the page,
+on SQLite compiled to WebAssembly (sql.js) with every migration applied. Changes a visitor makes are saved in
+their own browser, and "Reset demo data" puts the sample back. Nothing is sent anywhere: no Cloudflare, no
+Claude. The "sample coach" replies are pre-written. They write their output into the demo data through the
+same MCP tool code the real connector uses, so visitors can see where coach notes, plans and questions show
+up.
+
+On a computer the front page shows the app in a phone frame next to a feature tour. On a phone the links
+open the app full screen, with a Demo button for the sample coach and reset.
+
+```sh
+npm run demo         # http://localhost:5173 with hot reload
+npm run build:demo   # static files in dist-demo/
+```
+
+CI builds it on every push and deploys it to GitHub Pages from `main` (the `demo` job). Sample data lives in
+`demo/seed.ts`. It is invented: never copy real logs into it.
+
 ## What's where
 
 | | |
@@ -150,6 +171,7 @@ Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:loc
 | `migrations/` | Schema and default timer presets (D1 strips SQL comments; column docs for `get_schema` live in `worker/schema-docs.ts`) |
 | `src/pages/` | Today, Log, Timer, History, Plan, Injuries, Benchmarks, Settings, Feedback, Grades (table), GradeProgress (hardest grade over time) |
 | `src/timer.ts` | Hangboard phase sequencing, beeps, screen wake lock |
+| `demo/` | Public demo: landing page, in-browser D1 (`d1.ts`) and backend (`backend.ts`), sample data (`seed.ts`), sample coach (`coach.ts`) |
 
 Training load = minutes × effort (1-10), compared with your average week over the previous four.
 Finger load (boulder, board, lead, top rope, hangboard) is tracked separately.

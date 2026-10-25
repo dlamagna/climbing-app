@@ -32,6 +32,7 @@ jobs:
       - run: npm ci
       - run: npm test --if-present
       - run: npm run build # typechecks the app and the worker, then builds dist/
+      - run: npm run build:demo # the public demo (demo/), so it never falls behind the app
 
   # The repo is public: fail on committed secrets or on the owner's personal details.
   scan:
@@ -126,3 +127,36 @@ jobs:
           command: |
             d1 migrations apply climbing --remote
             deploy
+
+  # The public demo: the app on sample data, running entirely in the browser (demo/). Static files on
+  # GitHub Pages, nothing to do with the Cloudflare deploy above. Needs Pages enabled with source
+  # "GitHub Actions" (Settings -> Pages).
+  demo:
+    needs: [build, scan]
+    if: >-
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: deploy-demo
+      cancel-in-progress: true
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run build:demo
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: dist-demo
+      - id: deploy
+        uses: actions/deploy-pages@v5
