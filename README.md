@@ -4,6 +4,9 @@ Personal climbing-training app for the phone: a 3-tap morning check-in (sleep, f
 session logging with automatic training load, a customisable hangboard timer, injury tracking that only
 appears when you're injured, and a plan + coach notes that Claude writes for you over MCP.
 
+**Try it: [dlamagna.github.io/climbing-app](https://dlamagna.github.io/climbing-app/)**. The app on a
+made-up climber's sample data, running entirely in your browser (see [Public demo](#public-demo)).
+
 Everything runs on Cloudflare's free tier: one Worker serves the app, its API and the MCP server,
 with a D1 (SQLite) database. There are no Claude API costs; Claude reads and writes the data through a
 custom connector on your normal Claude plan.
