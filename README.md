@@ -145,8 +145,9 @@ Claude. The "sample coach" replies are pre-written. They write their output into
 same MCP tool code the real connector uses, so visitors can see where coach notes, plans and questions show
 up.
 
-On a computer the front page shows the app in a phone frame next to a feature tour. On a phone the links
-open the app full screen, with a Demo button for the sample coach and reset.
+On a computer the front page shows the app in a phone frame next to a feature tour and the sample coach.
+On a phone the front page has the tour and the sample coach, and its links open the app full screen (which
+has a "Sample coach" button too).
 
 ```sh
 npm run demo         # http://localhost:5173 with hot reload

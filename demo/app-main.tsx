@@ -51,7 +51,7 @@ async function boot(): Promise<DemoHandle> {
 function mountDemoMenu(demo: DemoHandle) {
   const ui = document.getElementById("demo-ui")!;
   ui.innerHTML = `
-    <button class="demo-pill" aria-haspopup="dialog">Demo</button>
+    <button class="demo-pill" aria-haspopup="dialog">Sample coach</button>
     <div class="demo-sheet" role="dialog" aria-label="Demo" hidden>
       <div class="demo-sheet-body">
         <div class="demo-sheet-head">
@@ -81,6 +81,10 @@ function mountDemoMenu(demo: DemoHandle) {
   // ./app.html?coach opens the sample coach straight away (link from the phone landing page).
   if (new URLSearchParams(location.search).has("coach")) open(true);
 }
+
+// Back/forward can restore this page from memory with an older copy of the demo database than the one
+// saved since (e.g. by the sample coach on the front page). Start over from the saved one instead.
+addEventListener("pageshow", (e) => e.persisted && location.reload());
 
 window.climbDemo = boot();
 window.climbDemo.catch((e) => {

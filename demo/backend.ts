@@ -50,6 +50,7 @@ export interface DemoBackend {
   fetch(req: Request): Promise<Response>;
   mcp(tool: string, args?: Record<string, unknown>): Promise<unknown>;
   reset(): Promise<void>;
+  flush(): Promise<void>; // saves now instead of after the debounce (before leaving the page)
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
@@ -104,6 +105,10 @@ export async function startBackend(): Promise<DemoBackend> {
       } catch {
         return text;
       }
+    },
+    async flush() {
+      clearTimeout(saveTimer);
+      await saveBytes(d1.raw.export());
     },
     async reset() {
       clearTimeout(saveTimer);

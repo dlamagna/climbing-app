@@ -218,9 +218,6 @@ h2 {
   .desktop-only {
     display: revert !important;
   }
-  .coach-panel.desktop-only {
-    display: flex !important;
-  }
   .phone-only {
     display: none !important;
   }

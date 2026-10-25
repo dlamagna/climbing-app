@@ -4,7 +4,8 @@
 import "./landing.css";
 import "./coach.css";
 import type { DemoHandle } from "./app-main";
-import { forgetDemo } from "./store";
+import type { DemoBackend } from "./backend";
+import { clearAppCache, forgetDemo } from "./store";
 import { mountCoachPanel } from "./coach";
 
 const FEATURES = [
@@ -55,11 +56,23 @@ for (const f of FEATURES) {
   features.append(a);
 }
 
+// On a phone there's no app on this page, so the sample coach runs its own copy of the demo backend
+// (started on first use) and the app page loads what it saved when it opens.
+let phoneBackend: Promise<DemoBackend> | null = null;
+const ownBackend = () => (phoneBackend ??= import("./backend").then((m) => m.startBackend()));
+// Restored from memory by back/forward: the app may have saved newer data since, so load that next time.
+addEventListener("pageshow", (e) => {
+  if (e.persisted) phoneBackend = null;
+});
+
 for (const b of document.querySelectorAll<HTMLButtonElement>(".reset")) {
   b.onclick = async () => {
     b.disabled = true;
     if (frame.src) await (await app()).reset();
-    else await forgetDemo();
+    else if (phoneBackend) {
+      await (await phoneBackend).reset();
+      clearAppCache();
+    } else await forgetDemo();
     b.disabled = false;
     b.textContent = "done, fresh data";
     setTimeout(() => (b.textContent = b.dataset.label!), 2000);
@@ -67,17 +80,18 @@ for (const b of document.querySelectorAll<HTMLButtonElement>(".reset")) {
   b.dataset.label = b.textContent!;
 }
 
-let coachMounted = false;
-function startDesktop() {
-  if (!desktop.matches) return;
-  void app();
-  if (coachMounted) return;
-  coachMounted = true;
-  mountCoachPanel(
-    document.getElementById("coach")!,
-    async () => (await app()).backend,
-    (route) => void app().then((h) => h.show(route)),
-  );
-}
+mountCoachPanel(
+  document.getElementById("coach")!,
+  async () => (desktop.matches ? (await app()).backend : ownBackend()),
+  async (route, clicked) => {
+    if (desktop.matches) return void app().then((h) => h.show(route));
+    if (!clicked) return; // phone: stay on the reply until its button is tapped
+    await (await ownBackend()).flush();
+    location.href = `./app.html#/${route}`;
+  },
+);
+
+// The app in the phone frame only loads on a computer.
+const startDesktop = () => desktop.matches && void app();
 startDesktop();
 desktop.addEventListener("change", startDesktop);
