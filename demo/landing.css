@@ -1,0 +1,259 @@
+/* Demo front page. Same palette as the app (src/styles.css): dark by default, light when the device is. */
+:root {
+  color-scheme: dark;
+  --bg: #101216;
+  --surface: #1a1d23;
+  --surface-2: #252932;
+  --border: #2e333d;
+  --text: #f1f0ec;
+  --muted: #9a9ca4;
+  --accent: #ff8a4c;
+  --accent-ink: #1a0d05;
+  --good: #3ecf8e;
+  --warn: #f2b33d;
+  --bad: #ff6b6b;
+  --radius: 14px;
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    color-scheme: light;
+    --bg: #f4f3ef;
+    --surface: #ffffff;
+    --surface-2: #ecebe6;
+    --border: #dcdad3;
+    --text: #15161a;
+    --muted: #63656d;
+    --accent: #e8632a;
+    --accent-ink: #ffffff;
+    --good: #138a55;
+    --warn: #a86b00;
+    --bad: #c93636;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+}
+
+a {
+  color: var(--accent);
+}
+
+.wrap {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 32px);
+}
+
+.top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin-bottom: 24px;
+}
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 18px;
+}
+.brand img {
+  border-radius: 7px;
+}
+.badge {
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.gh {
+  margin-left: auto;
+  font-size: 14px;
+}
+
+.story {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+  min-width: 0;
+}
+
+h1 {
+  margin: 0 0 12px;
+  font-size: clamp(32px, 7vw, 52px);
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+h2 {
+  margin: 0 0 14px;
+  font-size: 22px;
+  letter-spacing: -0.01em;
+}
+.lede {
+  margin: 0 0 20px;
+  font-size: 19px;
+  color: var(--text);
+  max-width: 34em;
+}
+.section-lede {
+  margin: 0 0 16px;
+  color: var(--muted);
+  max-width: 38em;
+}
+.hint {
+  margin: 0 0 8px;
+  font-weight: 600;
+}
+.small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.cta {
+  display: block;
+  margin: 0 0 14px;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-ink);
+  text-align: center;
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 17px;
+}
+.cta.secondary {
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+.feature {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  text-decoration: none;
+  transition: border-color 0.15s;
+}
+.feature strong {
+  font-size: 16px;
+}
+.feature span {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.feature:hover,
+.feature.on {
+  border-color: var(--accent);
+}
+.feature.on strong {
+  color: var(--accent);
+}
+
+.how {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px;
+}
+.how div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.how span {
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.foot {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* Phone: one column, links open the app full screen. */
+.desktop-only {
+  display: none !important;
+}
+
+/* Computer: tour on the left, the live app in a phone frame on the right. */
+@media (min-width: 960px) {
+  .desktop-only {
+    display: revert !important;
+  }
+  .phone-only {
+    display: none !important;
+  }
+  .layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 48px;
+    align-items: start;
+  }
+  .device {
+    position: sticky;
+    top: 16px;
+    display: flex !important;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+  .phone {
+    height: min(844px, calc(100vh - 72px));
+    aspect-ratio: 390 / 844;
+    padding: 10px;
+    border-radius: 48px;
+    background: #050608;
+    box-shadow: 0 0 0 1px var(--border), 0 30px 60px -20px rgb(0 0 0 / 0.5);
+  }
+  .phone iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    border-radius: 38px;
+    background: var(--bg);
+  }
+  .device-actions {
+    display: flex;
+    gap: 20px;
+    font-size: 14px;
+  }
+}

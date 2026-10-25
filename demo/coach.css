@@ -1,0 +1,122 @@
+/* The sample coach panel, used on the landing page and in the app's demo sheet. Uses the app's colour
+   tokens (src/styles.css on the app side, landing.css on the landing page). */
+
+.coach-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.coach-log {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 420px;
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.msg {
+  max-width: 92%;
+  padding: 10px 12px;
+  border-radius: 12px;
+  line-height: 1.45;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.msg p {
+  margin: 0;
+}
+.msg p + p,
+.msg p + ul,
+.msg ul + p {
+  margin-top: 8px;
+}
+.msg ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.msg.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.msg.coach {
+  align-self: flex-start;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.msg.intro {
+  color: var(--muted);
+}
+.msg.error {
+  color: var(--bad);
+}
+
+.tool {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+}
+.tool-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warn);
+  animation: coach-pulse 0.8s infinite alternate;
+}
+.tool.done .tool-dot {
+  background: var(--good);
+  animation: none;
+}
+@keyframes coach-pulse {
+  to {
+    opacity: 0.3;
+  }
+}
+
+.coach-open {
+  display: block;
+  margin-top: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.coach-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.coach-chips.busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
+.coach-chip {
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.coach-chip:hover {
+  border-color: var(--accent);
+}

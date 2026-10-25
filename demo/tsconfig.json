@@ -1,0 +1,8 @@
+{
+  // Browser code; the worker it runs is checked separately (worker/tsconfig.json).
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "types": ["vite/client"]
+  },
+  "include": [".", "../vite.demo.config.ts"]
+}
