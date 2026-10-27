@@ -211,6 +211,23 @@ textarea {
 textarea {
   resize: vertical;
 }
+/* iOS gives a date input its own intrinsic width and centred text, which pushes it out of its card. */
+input[type="date"] {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  appearance: none;
+  -webkit-appearance: none;
+  text-align: left;
+}
+input[type="date"]::-webkit-date-and-time-value {
+  text-align: left;
+}
+textarea.autogrow {
+  resize: none;
+  overflow: hidden;
+}
 input:focus,
 textarea:focus {
   outline: 2px solid var(--accent);
