@@ -49,18 +49,10 @@ import { deleteSession, outdoorColumn, outdoorError } from "./sessions";
 import { PLAN_STATUSES, isPlanStatus } from "./plan";
 import { deleteTimerSession, insertTimerLog, markSessionWarmup, setTimerSessionRpe, setTimerWarmup } from "./timerLog";
 import { isRpe } from "./timerSession";
+import { tokenMatches } from "./auth";
 
 type C = Context<{ Bindings: Env }>;
 
-const encoder = new TextEncoder();
-
-// Fails closed: an unset secret rejects everything.
-function tokenMatches(given: string | undefined, expected: string | undefined): boolean {
-  if (!given || !expected) return false;
-  const a = encoder.encode(given);
-  const b = encoder.encode(expected);
-  return a.byteLength === b.byteLength && crypto.subtle.timingSafeEqual(a, b);
-}
 
 function bearer(c: C): string | undefined {
   return c.req.header("Authorization")?.replace(/^Bearer\s+/i, "");

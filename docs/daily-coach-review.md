@@ -68,7 +68,7 @@ Feedback sent before the picker existed has no priority, so the review picks one
 ## Set it up
 
 You need:
-- your own deployed copy of the app (see [Deploy](../README.md#deploy-one-time-10-minutes))
+- your own deployed copy of the app (see [Deploy](../README.md#deploy-your-own-copy))
 - the climbing-app connector added in the Claude app (Settings → Connectors). The routine uses the same
   connector.
 - a Claude plan that includes Claude Code routines. Each run uses some of your plan's usage, like any Claude

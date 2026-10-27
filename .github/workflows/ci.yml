@@ -91,11 +91,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # Copies of the repo (forks, or ones made by the Deploy to Cloudflare button, which deploys through
+      # Workers Builds instead) have no Cloudflare secrets: skip rather than fail.
       # If two pushes land close together, only deploy the commit that is still the tip of main;
       # the newer commit's own run deploys it.
-      - name: Check this commit is still the tip of main
+      - name: Check credentials, and that this commit is still the tip of main
         id: tip
+        env:
+          HAS_CREDENTIALS: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
         run: |
+          if [ "$HAS_CREDENTIALS" != "true" ]; then
+            echo "::notice::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID are not set; skipping deploy."
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           tip=$(git ls-remote origin refs/heads/main | cut -f1)
           if [ "$tip" = "$GITHUB_SHA" ]; then
             echo "current=true" >> "$GITHUB_OUTPUT"
@@ -132,17 +141,19 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: |
-            d1 migrations apply climbing --remote
+            d1 migrations apply DB --remote
             deploy --var DEPLOYED_COMMIT_EPOCH:${{ steps.commit.outputs.epoch }}
 
   # The public demo: the app on sample data, running entirely in the browser (demo/). Static files on
   # GitHub Pages, nothing to do with the Cloudflare deploy above. Needs Pages enabled with source
-  # "GitHub Actions" (Settings -> Pages).
+  # "GitHub Actions" (Settings -> Pages). Runs on the upstream repo; in a copy, set the repository variable
+  # DEMO_PAGES to true to publish your own.
   demo:
     needs: [build, scan]
     if: >-
       github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch') &&
+      (github.repository == 'dlamagna/climbing-app' || vars.DEMO_PAGES == 'true')
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

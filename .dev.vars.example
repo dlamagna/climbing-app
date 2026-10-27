@@ -1,0 +1,9 @@
+# Required secrets. Copy to .dev.vars for local development (git-ignored), and set the deployed ones with
+# `npx wrangler secret put <NAME>`. The Deploy to Cloudflare button asks for these two.
+# Generate each with: openssl rand -hex 24
+# The worker refuses every request while a token still starts with "replace-me".
+APP_TOKEN=replace-me
+MCP_TOKEN=replace-me
+
+# Optional secrets are listed in README.md (GITHUB_TOKEN, COACH_REVIEW_FIRE_URL / _TOKEN,
+# ISSUE_WORKER_FIRE_URL / _TOKEN). Leave them out unless you use those features.
