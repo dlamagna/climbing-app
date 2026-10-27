@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useApi } from "../api";
 import { ClimbingDaysPlanner, CoachQuestions, CoachUpdate, NoteToCoach } from "../components/coach";
 import { CoachActivity } from "../components/coachActivity";
+import { MissedReview } from "../components/missedReview";
 import { StepList } from "../components/StepList";
 import { Card, Chips, PageHeader } from "../components/ui";
 import { dayLabel, localDateOf, localToday } from "../dates";
@@ -32,6 +33,8 @@ export default function Coach() {
   return (
     <div className="page">
       <PageHeader title="Coach" sub="Daily review, questions and your notes" />
+
+      <MissedReview />
 
       <CoachQuestions questions={data.coach_questions ?? []} onAnswered={answered} />
 

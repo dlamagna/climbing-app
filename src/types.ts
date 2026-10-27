@@ -162,6 +162,7 @@ export interface AutoStart {
     session_url: string | null;
     created_at: string;
   } | null;
+  missed?: { start_id: number; reason: "failed" | "no_run"; created_at: string } | null; // an automatic review that didn't complete
 }
 
 export type FeedbackPriority = "P0" | "P1" | "P2";
