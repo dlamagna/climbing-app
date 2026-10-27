@@ -105,14 +105,14 @@ describe("multi questions", () => {
 
 describe("weeklyQuestion", () => {
   // 2026-05-04 is a Monday.
-  it("on Monday offers every day of the week and expires on Sunday", () => {
+  it("on Monday offers the 10-day window and expires on its last day", () => {
     const q = weeklyQuestion("2026-05-04")!;
-    expect(q.options).toEqual(["Mon 4", "Tue 5", "Wed 6", "Thu 7", "Fri 8", "Sat 9", "Sun 10", NOT_THIS_WEEK]);
-    expect(q).toMatchObject({ multi: true, allow_text: true, expires_on: "2026-05-10", topic: "week_days:2026-05-04" });
+    expect(q.options).toEqual(["Mon 4", "Tue 5", "Wed 6", "Thu 7", "Fri 8", "Sat 9", "Sun 10", "Mon 11", "Tue 12", "Wed 13", NOT_THIS_WEEK]);
+    expect(q).toMatchObject({ multi: true, allow_text: true, expires_on: "2026-05-13", topic: "week_days:2026-05-04" });
   });
-  it("later in the week offers only the remaining days, same topic", () => {
+  it("later in the week starts at that day, same topic", () => {
     const q = weeklyQuestion("2026-05-06")!;
-    expect(q.options).toEqual(["Wed 6", "Thu 7", "Fri 8", "Sat 9", "Sun 10", NOT_THIS_WEEK]);
+    expect(q.options).toEqual(["Wed 6", "Thu 7", "Fri 8", "Sat 9", "Sun 10", "Mon 11", "Tue 12", "Wed 13", "Thu 14", "Fri 15", NOT_THIS_WEEK]);
     expect(q.topic).toBe("week_days:2026-05-04");
   });
   it("isn't created from Thursday on", () => {
