@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { fetchFile, savedToast, send, setToken, toast, useApi } from "../api";
 import { Card, Field, PageHeader } from "../components/ui";
 
@@ -11,6 +11,18 @@ const FIELDS = [
   { key: "weekly_availability", label: "When can you train?", placeholder: "e.g. Mon/Wed gym 2h, Sat outdoor, hangboard at home" },
   { key: "gym_setup", label: "Equipment", placeholder: "e.g. Beastmaker 1000 at home, gym has a Moonboard" },
 ];
+
+// A textarea that grows to fit its text, so a long answer isn't cut off behind a scroll.
+function AutoTextarea({ value, ...rest }: React.TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + 2}px`;
+  }, [value]);
+  return <textarea ref={ref} className="autogrow" rows={2} value={value} {...rest} />;
+}
 
 const isStandalone = () =>
   matchMedia("(display-mode: standalone)").matches || (navigator as { standalone?: boolean }).standalone === true;
@@ -78,7 +90,7 @@ export default function Settings() {
               {f.type === "date" ? (
                 <input type="date" value={profile[f.key] ?? ""} onChange={(e) => setProfile({ ...profile, [f.key]: e.target.value })} />
               ) : (
-                <textarea rows={2} value={profile[f.key] ?? ""} placeholder={f.placeholder} onChange={(e) => setProfile({ ...profile, [f.key]: e.target.value })} />
+                <AutoTextarea value={profile[f.key] ?? ""} placeholder={f.placeholder} onChange={(e) => setProfile({ ...profile, [f.key]: e.target.value })} />
               )}
             </Field>
           ))}
