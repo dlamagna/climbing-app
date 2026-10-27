@@ -146,7 +146,8 @@ export function parseAnswer(body: unknown, q: Pick<Question, "options" | "allow_
 }
 
 // The weekly question (#54): created by the server on the first app open (or review) from Monday to
-// WEEKLY_LAST_OFFSET days later, once per week, with a chip per remaining day; it expires on Sunday.
+// WEEKLY_LAST_OFFSET days later, once per week, with a chip per day of the CLIMB_DAYS_AHEAD-day window (the same
+// one "Plan my climbing days" offers); it expires on the window's last day.
 export const WEEKLY_LAST_OFFSET = 2; // Wednesday
 export const WEEKLY_QUESTION = "Which days do you plan to climb this week?";
 
@@ -158,14 +159,14 @@ export function weeklyQuestion(today: string): (NewQuestion & { topic: string })
   const monday = mondayOf(today);
   const offset = daysBetween(monday, today);
   if (offset > WEEKLY_LAST_OFFSET) return null;
-  const days = Array.from({ length: 7 - offset }, (_, i) => dayChip(addDays(today, i)));
+  const days = Array.from({ length: CLIMB_DAYS_AHEAD }, (_, i) => dayChip(addDays(today, i)));
   return {
     question: WEEKLY_QUESTION,
     why: "The coach plans this week's climbing on those days. Add a note for anything else (evenings only, a day outdoors...).",
     options: [...days, NOT_THIS_WEEK],
     allow_text: true,
     multi: true,
-    expires_on: addDays(monday, 6),
+    expires_on: addDays(today, CLIMB_DAYS_AHEAD - 1),
     topic: `${WEEK_TOPIC}:${monday}`,
   };
 }
