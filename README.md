@@ -1,5 +1,9 @@
 # Climb Log
 
+[![CI](https://github.com/dlamagna/climbing-app/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/dlamagna/climbing-app/actions/workflows/ci.yml)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-blue.svg)](LICENSE)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/dlamagna/climbing-app)
+
 Personal climbing-training app for the phone: a 3-tap morning check-in (sleep, feeling, drinks, protein),
 session logging with automatic training load, a customisable hangboard timer, injury tracking that only
 appears when you're injured, and a plan + coach notes that Claude writes for you over MCP.
@@ -16,30 +20,67 @@ iPhone (home-screen web app) ──/api──▶ Cloudflare Worker ──▶ D1 
 Claude app / Claude Code ─────/mcp──▶        ″
 ```
 
-## Deploy (one time, ~10 minutes)
+## Deploy your own copy
+
+You need a free [Cloudflare](https://dash.cloudflare.com/sign-up) account, a [GitHub](https://github.com)
+account, and a Claude plan that supports custom connectors. Each copy has its own database: nobody else,
+including the maintainer, can see your data.
+
+First generate two random tokens and keep them in a password manager. You can't read them back from
+Cloudflare later.
 
 ```sh
-npm install
-npx wrangler login                        # opens a browser to sign in to (free) Cloudflare
-npx wrangler d1 create climbing           # replace the database_id in wrangler.jsonc with the printed one
-npm run db:migrate:remote                 # create the tables
-
-# Generate the two access tokens, save them to .tokens (git-ignored) and upload them as secrets.
-umask 077; for name in APP_TOKEN MCP_TOKEN; do
-  t=$(openssl rand -hex 24); echo "$name=$t" >> .tokens; echo "$t" | npx wrangler secret put $name
-done
-
-npm run deploy                            # prints https://climbing-app.<you>.workers.dev
+openssl rand -hex 24   # APP_TOKEN: the phone app sends this
+openssl rand -hex 24   # MCP_TOKEN: goes in the connector URL you give Claude
 ```
 
-**Auto-deploy.** After the first manual deploy, every push to `main` is deployed by GitHub Actions
-(`.github/workflows/ci.yml`): the `build` job runs on every push and PR, and on `main` the `deploy`
-job then applies D1 migrations and runs `wrangler deploy`. It needs two repo secrets (Settings →
-Secrets and variables → Actions): `CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN` (a custom
-token with *Workers Scripts: Edit* and *D1: Edit*). The worker's own secrets stay in Cloudflare.
+### Option A: Deploy to Cloudflare button (~5 minutes)
 
-`cat .tokens` shows both tokens; keep them in a password manager. A secret can't be read back from
-Cloudflare. If you lose one, run the loop again for that name.
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/dlamagna/climbing-app)
+
+1. Click the button and sign in to Cloudflare and GitHub.
+2. Keep the suggested names. Cloudflare creates a copy of this repo in your GitHub account and a new, empty
+   D1 database.
+3. Paste your two tokens into `APP_TOKEN` and `MCP_TOKEN`. The worker refuses every request while either still
+   holds the `replace-me` placeholder.
+4. Keep the build and deploy commands it suggests (`npm run build`, `npm run deploy`) and deploy. The deploy
+   command creates the tables, and you get `https://climbing-app.<you>.workers.dev`.
+
+From then on, Cloudflare (Workers Builds) redeploys every push to `main` of your copy, applying new
+migrations first. To get updates from this repo:
+
+```sh
+git remote add upstream https://github.com/dlamagna/climbing-app   # once
+git pull upstream main && git push
+```
+
+### Option B: with wrangler (~10 minutes)
+
+Fork the repo, clone your fork, then:
+
+```sh
+npm ci
+npx wrangler login                        # opens a browser to sign in to Cloudflare
+npx wrangler d1 create climbing           # replace the database_id in wrangler.jsonc with the printed one
+
+# Store the two tokens in .tokens (git-ignored) and upload them as secrets.
+umask 077; for name in APP_TOKEN MCP_TOKEN; do
+  read -rsp "$name: " t; echo; echo "$name=$t" >> .tokens; echo "$t" | npx wrangler secret put $name
+done
+
+npm run deploy                            # builds, applies migrations, prints https://climbing-app.<you>.workers.dev
+```
+
+Lost a token? Run `npx wrangler secret put APP_TOKEN` (or `MCP_TOKEN`) with a new one.
+
+**Auto-deploy from GitHub Actions.** With two repo secrets in your fork (Settings → Secrets and variables →
+Actions), `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` (a custom token with *Workers Scripts: Edit*
+and *D1: Edit*), every push to `main` is deployed by `.github/workflows/ci.yml`: the `build` job runs on
+every push and PR, then on `main` the `deploy` job applies D1 migrations and runs `wrangler deploy`. Without
+the secrets the deploy job is skipped. Use this or Workers Builds, not both. The worker's own secrets stay
+in Cloudflare.
+
+### Then, either way
 
 **On the iPhone:** open the URL in Safari → Share → *Add to Home Screen*. Open it from the home screen
 and paste the APP_TOKEN once.
@@ -64,7 +105,8 @@ Then ask, for example:
 
 Adds `report_issue` and `list_issues` to the connector, so you can say *"log an idea: …"* from the Claude
 app. Create a [fine-grained token](https://github.com/settings/personal-access-tokens/new) limited to
-your repo with **Issues: Read and write** (nothing else), set `GITHUB_REPO` in `wrangler.jsonc`, then:
+your repo with **Issues: Read and write** (nothing else), set `GITHUB_REPO` in `wrangler.jsonc` to **your own
+fork** (it points at this repo by default), then:
 
 ```sh
 npx wrangler secret put GITHUB_TOKEN
@@ -157,12 +199,17 @@ lost (export first if you want to keep it). The restore prints a bookmark you ca
 ## Develop
 
 ```sh
+npm ci
+cp .dev.vars.example .dev.vars   # then put your own tokens in it
 npm run db:migrate:local
-npm run serve            # builds, then runs the full app on http://localhost:8787 (tokens in .dev.vars)
+npm run serve            # builds, then runs the full app on http://localhost:8787
 npm run dev              # optional: Vite hot reload on :5173, proxying /api to :8787
+npm test
 ```
 
-Schema changes: add `migrations/000N_name.sql`, then run `npm run db:migrate:local`. Merging to `main` applies it remotely.
+Schema changes: add `migrations/00NN_name.sql`, then run `npm run db:migrate:local`. Every deployed copy
+applies it on its next deploy. [CONTRIBUTING.md](CONTRIBUTING.md) has the rules for migrations, tests and
+pull requests.
 
 ## Public demo
 
@@ -211,6 +258,17 @@ Offline: the app shell and the timer work without signal; writes made offline ar
 ## Roadmap
 
 See the pinned [Roadmap issue](https://github.com/dlamagna/climbing-app/issues/14).
+
+## Contributing
+
+Contributions are welcome: bug reports, ideas, docs and code. Read [CONTRIBUTING.md](CONTRIBUTING.md) for
+the development setup and how pull requests are reviewed, and follow the [Code of Conduct](CODE_OF_CONDUCT.md).
+The one hard rule: no real training data in code, fixtures, issues or pull requests.
+
+## Security
+
+Please report vulnerabilities privately, as described in [SECURITY.md](SECURITY.md), which also has tips for
+hardening your own deployment.
 
 ## Licence
 

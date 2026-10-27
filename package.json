@@ -2,14 +2,23 @@
   "name": "climbing-app",
   "private": true,
   "type": "module",
+  "description": "Phone-first climbing training log on Cloudflare Workers + D1, with Claude as the coach over MCP.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dlamagna/climbing-app.git"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json --noEmit && tsc -p worker/tsconfig.json --noEmit && vite build",
     "test": "vitest run",
-    "db:migrate:local": "wrangler d1 migrations apply climbing --local",
-    "db:migrate:remote": "wrangler d1 migrations apply climbing --remote",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
     "serve": "npm run build && wrangler dev",
-    "deploy": "npm run build && wrangler deploy",
+    "deploy": "npm run build && npm run db:migrate:remote && wrangler deploy",
     "demo": "vite --config vite.demo.config.ts",
     "build:demo": "tsc -p demo/tsconfig.json --noEmit && vite build --config vite.demo.config.ts"
   },
@@ -33,5 +42,24 @@
   "allowScripts": {
     "esbuild@0.28.2": true,
     "workerd@1.20261006.1": true
+  },
+  "cloudflare": {
+    "bindings": {
+      "DB": {
+        "description": "The D1 database that holds your training data. A new, empty one is created for you; the tables are created on the first deploy."
+      },
+      "APP_TOKEN": {
+        "description": "Token the phone app sends. Generate a random one with `openssl rand -hex 24` and keep it in a password manager: you paste it into the app once, and it cannot be read back from Cloudflare."
+      },
+      "MCP_TOKEN": {
+        "description": "Token in the connector URL you give Claude. Generate a different random one with `openssl rand -hex 24` and keep it too."
+      },
+      "GITHUB_REPO": {
+        "description": "Only for the optional `report_issue` tool: set this to **your own fork** (`owner/repo`), not the upstream repo. Ignored until you add a `GITHUB_TOKEN` secret."
+      },
+      "GITHUB_ROADMAP_ISSUE": {
+        "description": "Optional: number of an issue in your fork that filed issues are listed in. Clear it if you have none."
+      }
+    }
   }
 }

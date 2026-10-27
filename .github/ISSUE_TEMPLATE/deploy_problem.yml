@@ -1,0 +1,45 @@
+name: Deployment problem
+description: Trouble deploying your own copy to Cloudflare or connecting it to Claude.
+labels: [question]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Never paste your `APP_TOKEN`, `MCP_TOKEN`, Cloudflare API token, account id or full worker URL.
+  - type: dropdown
+    id: how
+    attributes:
+      label: How did you deploy?
+      options:
+        - Deploy to Cloudflare button
+        - Manually with wrangler (README steps)
+        - GitHub Actions in my fork
+    validations:
+      required: true
+  - type: dropdown
+    id: step
+    attributes:
+      label: Which step failed?
+      options:
+        - Creating the D1 database
+        - Applying migrations
+        - Setting secrets
+        - Build or deploy
+        - Opening the app / pasting the token
+        - Adding the Claude connector
+        - Daily coach review routine
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran and the error you got.
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Node and wrangler versions
+      placeholder: node 24.x, wrangler 4.x

@@ -1,0 +1,49 @@
+name: Bug report
+description: Something in the app, the API or the Claude connector doesn't work as it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. This repository is public: **describe the problem in general terms and leave out
+        your own training data** (session notes, injuries, check-in values, places, dates) and your worker URL or
+        tokens. Made-up example values are fine.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open Log
+        2. ...
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where
+      multiple: true
+      options:
+        - Phone app (home-screen web app)
+        - Browser on a computer
+        - Claude connector (MCP)
+        - Daily coach review / routines
+        - Public demo
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Commit or date of your deployment
+      description: The commit your copy runs, or roughly when you last synced your fork.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Errors or logs
+      description: Browser console or `wrangler tail` output, with tokens and personal data removed.
+      render: text

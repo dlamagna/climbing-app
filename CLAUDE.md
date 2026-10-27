@@ -1,5 +1,10 @@
 # Notes for Claude
 
+These notes apply to every Claude session in this repo, the maintainer's and contributors'. Contributors:
+[CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the migration rules and the PR checklist; the privacy rules
+below apply to your own training data too. The `## Git` section's commit identity and the wrangler note are
+for the maintainer's sessions; commit under your own name and noreply address.
+
 ## This repo is public: no personal data, ever
 
 The code is public, the training data is private. Nothing that comes from the owner's real data or life goes into this repo, in any form:
@@ -21,4 +26,5 @@ Personal data includes anything read through `get_overview` or `query`, or from 
 
 - Claude sessions commit as `Claude <noreply@anthropic.com>` (they sign those commits, so GitHub shows them as Verified). Otherwise commit with the GitHub noreply address (`191261820+dlamagna@users.noreply.github.com`). Never a personal email.
 - `main` is protected: changes go through a pull request, and CI's `build` check must pass. Merging to `main` deploys to Cloudflare.
+- Migrations are applied by every self-hosted copy on its next deploy: add new numbered files, never edit merged ones, and prefer additive changes (see CONTRIBUTING.md).
 - Run wrangler as `env -u CLOUDFLARE_API_TOKEN npx wrangler ...` locally. The shell exports a token for another project that overrides the wrangler login.

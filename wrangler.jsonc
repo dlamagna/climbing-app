@@ -19,6 +19,9 @@
 			"/.well-known/*"
 		]
 	},
+	// The values below are the upstream maintainer's. In your own copy: the Deploy to Cloudflare button replaces
+	// database_id for you; on a manual deploy, replace it with the id `wrangler d1 create climbing` prints.
+	// Point GITHUB_REPO at your own fork before you add the GITHUB_TOKEN secret; without that secret it does nothing.
 	"vars": {
 		// Repo the optional report_issue / list_issues MCP tools write to (needs the GITHUB_TOKEN secret).
 		"GITHUB_REPO": "dlamagna/climbing-app",
@@ -37,4 +40,6 @@
 	//   APP_TOKEN - the phone app sends this as a bearer token
 	//   MCP_TOKEN - goes in the MCP URL you give to Claude
 	//   GITHUB_TOKEN - optional; fine-grained token for GITHUB_REPO with Issues: read & write
+	//   COACH_REVIEW_FIRE_URL / _TOKEN, ISSUE_WORKER_FIRE_URL / _TOKEN - optional; see README
+	// .dev.vars.example lists the required ones.
 }
