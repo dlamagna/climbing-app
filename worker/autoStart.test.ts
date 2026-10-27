@@ -259,14 +259,44 @@ describe("workerIssueNumbers", () => {
 describe("autoStartStatus", () => {
   it("is off without the review's trigger", async () => {
     env = { ...env, COACH_REVIEW_FIRE_URL: undefined } as unknown as Env;
-    expect(await autoStartStatus(env)).toEqual({ enabled: false, worker: false, last: null });
+    expect(await autoStartStatus(env)).toEqual({ enabled: false, worker: false, last: null, missed: null });
   });
 
   it("shows the newest automatic start", async () => {
-    expect(await autoStartStatus(env)).toEqual({ enabled: true, worker: true, last: null });
+    expect(await autoStartStatus(env)).toEqual({ enabled: true, worker: true, last: null, missed: null });
     logSession("17:00");
     await write("17:00");
     expect((await autoStartStatus(env)).last).toMatchObject({ routine: "review", status: "started", session_url: "https://claude.ai/code/session_1" });
+  });
+
+  describe("missed review", () => {
+    it("is flagged when the start failed", async () => {
+      status = 500;
+      logSession("17:00");
+      await write("17:00");
+      expect((await autoStartStatus(env, at("17:05"))).missed).toMatchObject({ reason: "failed" });
+    });
+
+    it("is flagged when a started review records no run within the grace period", async () => {
+      logSession("17:00");
+      await write("17:00");
+      expect((await autoStartStatus(env, at("17:30"))).missed).toBeNull(); // may still be running
+      expect((await autoStartStatus(env, at("18:40"))).missed).toMatchObject({ reason: "no_run" });
+    });
+
+    it("clears once a run is recorded", async () => {
+      logSession("17:00");
+      await write("17:00");
+      recordReview("17:20");
+      expect((await autoStartStatus(env, at("19:00"))).missed).toBeNull();
+    });
+
+    it("is dropped once the start is old", async () => {
+      status = 500;
+      logSession("01:00");
+      await write("01:00");
+      expect((await autoStartStatus(env, at("23:00"))).missed).toBeNull();
+    });
   });
 });
 

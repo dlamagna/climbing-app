@@ -20,6 +20,8 @@ import { type RoutineName, fireRoutine, routinesAvailable } from "./routines";
 // Sessions logged longer ago than this never start anything, e.g. right after this feature is deployed.
 export const SESSION_WINDOW_HOURS = 12;
 export const TIMER_SETTLE_MIN = 10;
+// A started review that has recorded no run after this long counts as not completed (e.g. its usage ran out).
+export const REVIEW_GRACE_MIN = 90;
 const TIMER_SESSION = /:session$/; // client_id of a timer session (worker/timerSession.ts)
 
 export type StartedBy = "session" | "app";
@@ -168,15 +170,30 @@ export interface AutoStartStatus {
   enabled: boolean; // the review's API trigger is set up, so logged sessions start it
   worker: boolean; // the issue worker follows it
   last: RoutineStart | null; // the newest automatic start
+  missed: { start_id: number; reason: "failed" | "no_run"; created_at: string } | null; // an automatic review that didn't complete (#94)
+}
+
+// The newest automatic review start, if it failed or never recorded a run, so the app can offer to run it
+// again. Recent starts only, and any run recorded since the start clears it.
+async function missedReview(db: D1Database, now: Date): Promise<AutoStartStatus["missed"]> {
+  const r = await db
+    .prepare("SELECT id, status, created_at FROM routine_starts WHERE started_by = 'session' AND routine = 'review' ORDER BY id DESC LIMIT 1")
+    .first<{ id: number; status: StartStatus; created_at: string }>();
+  if (!r || minutesSince(r.created_at, now) > SESSION_WINDOW_HOURS * 60) return null;
+  const failed = r.status === "failed";
+  if (!failed && !(r.status === "started" && minutesSince(r.created_at, now) >= REVIEW_GRACE_MIN)) return null;
+  const run = await db.prepare("SELECT 1 AS done FROM coach_runs WHERE created_at >= ? LIMIT 1").bind(r.created_at).first();
+  return run ? null : { start_id: r.id, reason: failed ? "failed" : "no_run", created_at: r.created_at };
 }
 
 // For the Coach tab's coach activity.
-export async function autoStartStatus(env: Env): Promise<AutoStartStatus> {
+export async function autoStartStatus(env: Env, now = new Date()): Promise<AutoStartStatus> {
   const available = routinesAvailable(env);
-  const status: AutoStartStatus = { enabled: available.review, worker: available.review && available.worker, last: null };
+  const status: AutoStartStatus = { enabled: available.review, worker: available.review && available.worker, last: null, missed: null };
   if (!status.enabled) return status;
   status.last = await env.DB
     .prepare("SELECT * FROM routine_starts WHERE started_by = 'session' ORDER BY id DESC LIMIT 1")
     .first<RoutineStart>();
+  status.missed = await missedReview(env.DB, now);
   return status;
 }

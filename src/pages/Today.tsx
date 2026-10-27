@@ -15,6 +15,7 @@ import {
 import { testsLabel } from "../benchmarkInputs";
 import { ProfileInjuryBanner } from "../components/profileInjury";
 import { WeeklyPopup } from "../components/coach";
+import { MissedReview } from "../components/missedReview";
 import { StepList } from "../components/StepList";
 import { PlanFlags, StatusChip, WeekSoFar } from "../components/planStatus";
 import { WeekSummary } from "../components/WeekSummary";
@@ -76,6 +77,7 @@ export default function Today() {
 
       <ReadinessBanner readiness={data.readiness} />
 
+      <MissedReview />
       <WeeklyPopup questions={data.coach_questions ?? []} today={today} onAnswered={answered} />
       {waiting > 0 && (
         <a className="card tone-accent coach-link" href="#/coach">
