@@ -44,7 +44,7 @@ jobs:
           fetch-depth: 0 # whole history, so both checks see every commit
 
       # Tokens and keys, including generic high-entropy ones like APP_TOKEN / MCP_TOKEN.
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITLEAKS_ENABLE_COMMENTS: false
