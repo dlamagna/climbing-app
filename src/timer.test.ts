@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activeSeconds, buildPhases, doneMessage, sessionMinutes, totalSeconds } from "./timer";
+import { activeSeconds, buildPhases, doneMessage, rewindTarget, sessionMinutes, totalSeconds } from "./timer";
 import type { Preset } from "./types";
 
 const preset: Preset = {
@@ -138,5 +138,22 @@ describe("doneMessage (#83)", () => {
   it("has no confirmation while the run isn't stored", () => {
     expect(doneMessage("error", "warmup", 3)).toBeNull();
     expect(doneMessage("saving", "training", 3)).toBeNull();
+  });
+});
+
+describe("rewindTarget", () => {
+  it("restarts the current phase once it is under way", () => {
+    expect(rewindTarget(3, 4.5)).toBe(3);
+    expect(rewindTarget(3, 1)).toBe(3);
+  });
+
+  it("goes to the previous phase when pressed at the start of one", () => {
+    expect(rewindTarget(3, 0)).toBe(2);
+    expect(rewindTarget(3, 0.4)).toBe(2);
+  });
+
+  it("stays on the first phase", () => {
+    expect(rewindTarget(0, 0)).toBe(0);
+    expect(rewindTarget(0, 5)).toBe(0);
   });
 });
