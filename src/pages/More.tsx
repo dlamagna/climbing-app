@@ -1,4 +1,7 @@
 import { PageHeader } from "../components/ui";
+import { coachInMore } from "../prefs";
+
+const COACH_LINK = { href: "#/coach", title: "Coach", sub: "Notes, questions and reviews from Claude" };
 
 const LINKS = [
   { href: "#/plan", title: "Plan", sub: "Upcoming sessions (Claude can write these)" },
@@ -14,7 +17,7 @@ export default function More() {
     <div className="page">
       <PageHeader title="More" />
       <nav className="menu">
-        {LINKS.map((l) => (
+        {(coachInMore() ? [COACH_LINK, ...LINKS] : LINKS).map((l) => (
           <a key={l.href} href={l.href}>
             <strong>{l.title}</strong>
             <span className="muted small">{l.sub}</span>

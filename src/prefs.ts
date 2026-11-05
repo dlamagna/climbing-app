@@ -40,3 +40,24 @@ export function dismissReview(startId: number) {
     // the prompt shows again next time
   }
 }
+
+const COACH_IN_MORE_KEY = "climb.coachInMore";
+
+// Show Coach under More instead of in the bottom tab bar (#99). Off unless switched on.
+export function coachInMore(): boolean {
+  try {
+    return localStorage.getItem(COACH_IN_MORE_KEY) === "on";
+  } catch {
+    return false;
+  }
+}
+
+export function setCoachInMore(on: boolean) {
+  try {
+    if (on) localStorage.setItem(COACH_IN_MORE_KEY, "on");
+    else localStorage.removeItem(COACH_IN_MORE_KEY);
+  } catch {
+    // stays at the default
+  }
+  window.dispatchEvent(new Event("climb:prefs"));
+}

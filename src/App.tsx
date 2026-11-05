@@ -14,6 +14,8 @@ import Plan from "./pages/Plan";
 import Settings from "./pages/Settings";
 import Timer from "./pages/Timer";
 import Today from "./pages/Today";
+import { coachInMore } from "./prefs";
+import { activeTabFor, tabsFor } from "./tabs";
 
 const ROUTES: Record<string, ComponentType> = {
   today: Today,
@@ -32,14 +34,6 @@ const ROUTES: Record<string, ComponentType> = {
   "grade-progress": GradeProgress,
 };
 
-const TABS = [
-  { route: "today", label: "Today", icon: "◉" },
-  { route: "log", label: "Log", icon: "+" },
-  { route: "timer", label: "Timer", icon: "◷" },
-  { route: "coach", label: "Coach", icon: "✦" },
-  { route: "history", label: "History", icon: "▤" },
-  { route: "more", label: "More", icon: "≡" },
-];
 const MORE_ROUTES = ["more", "plan", "injuries", "benchmarks", "settings", "feedback", "grades", "grade-progress"];
 
 const currentPath = () => location.hash.replace(/^#\/?/, "");
@@ -78,18 +72,22 @@ export default function App() {
   const path = usePath();
   const route = path.split("?")[0] || "today";
   const [message, setMessage] = useState<ToastMessage | null>(null);
+  const [coachMore, setCoachMore] = useState(coachInMore);
 
   useEffect(() => {
     const onAuth = () => setAuthed(false);
     const onToast = (e: Event) => setMessage((e as CustomEvent<ToastMessage>).detail);
     const onOnline = () => void sync();
+    const onPrefs = () => setCoachMore(coachInMore());
     window.addEventListener("climb:auth", onAuth);
     window.addEventListener("climb:toast", onToast);
     window.addEventListener("online", onOnline);
+    window.addEventListener("climb:prefs", onPrefs);
     return () => {
       window.removeEventListener("climb:auth", onAuth);
       window.removeEventListener("climb:toast", onToast);
       window.removeEventListener("online", onOnline);
+      window.removeEventListener("climb:prefs", onPrefs);
     };
   }, []);
 
@@ -106,7 +104,7 @@ export default function App() {
   if (!authed) return <TokenScreen onDone={() => setAuthed(true)} />;
 
   const Page = ROUTES[route] ?? Today;
-  const activeTab = MORE_ROUTES.includes(route) ? "more" : route === "checkin" ? "history" : route;
+  const activeTab = activeTabFor(route, coachMore, MORE_ROUTES);
 
   return (
     <>
@@ -131,7 +129,7 @@ export default function App() {
         </div>
       )}
       <nav className="tabbar">
-        {TABS.map((t) => (
+        {tabsFor(coachMore).map((t) => (
           <a key={t.route} href={`#/${t.route}`} className={t.route === activeTab ? "on" : ""}>
             <span className="tab-icon" aria-hidden>{t.icon}</span>
             {t.label}
