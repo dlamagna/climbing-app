@@ -9,7 +9,7 @@ import { MissedReview } from "../components/missedReview";
 import { StepList } from "../components/StepList";
 import { Card, Chips, PageHeader } from "../components/ui";
 import { dayLabel, localDateOf, localToday } from "../dates";
-import { popupsEnabled, setPopupsEnabled } from "../prefs";
+import { coachInMore, popupsEnabled, setCoachInMore, setPopupsEnabled } from "../prefs";
 import type { TodayView } from "../types";
 
 interface ClimberNote {
@@ -61,6 +61,7 @@ export default function Coach() {
       <CoachActivity />
 
       <PopupSetting />
+      <TabSetting />
     </div>
   );
 }
@@ -125,6 +126,29 @@ function PopupSetting() {
           if (!v) return;
           setPopupsEnabled(v === "on");
           setOn(v === "on");
+        }}
+      />
+    </Card>
+  );
+}
+
+function TabSetting() {
+  const [inMore, setInMore] = useState(coachInMore);
+  return (
+    <Card title="Coach tab">
+      <p className="small">
+        Move Coach from the bottom bar into More to free a slot. You can still open it from More. Saved on this phone.
+      </p>
+      <Chips
+        options={[
+          { value: "bar", label: "In the bar" },
+          { value: "more", label: "Under More" },
+        ]}
+        value={inMore ? "more" : "bar"}
+        onChange={(v) => {
+          if (!v) return;
+          setCoachInMore(v === "more");
+          setInMore(v === "more");
         }}
       />
     </Card>
