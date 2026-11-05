@@ -41,6 +41,12 @@ export function activeSeconds(phases: Phase[], spent: number[]): number {
   return phases.reduce((acc, ph, i) => acc + (ph.kind === "prep" ? 0 : Math.max(0, Math.min(ph.duration, spent[i] ?? 0))), 0);
 }
 
+// Where the rewind button goes (#100). Early in a phase (under a second in) it steps back to the previous
+// phase; otherwise it restarts the current one, so pressing it twice in a row goes back one section.
+export function rewindTarget(index: number, elapsedSec: number): number {
+  return elapsedSec < 1 && index > 0 ? index - 1 : index;
+}
+
 // Whole minutes for the logged session (sessions.duration_min is an integer >= 1).
 export const sessionMinutes = (sec: number) => Math.max(1, Math.round(sec / 60));
 

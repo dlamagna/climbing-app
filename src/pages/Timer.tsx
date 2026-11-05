@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { isQueued, savedToast, send, toast, useApi } from "../api";
 import { Card, Chips, Field, PageHeader, Stepper, range, seconds } from "../components/ui";
 import { localToday } from "../dates";
-import { Beeper, PHASE_LABEL, type RunSaveState, ScreenLock, activeSeconds, buildPhases, clock, doneMessage, sessionMinutes, totalSeconds } from "../timer";
+import { Beeper, PHASE_LABEL, type RunSaveState, ScreenLock, activeSeconds, buildPhases, clock, doneMessage, rewindTarget, sessionMinutes, totalSeconds } from "../timer";
 import type { Preset } from "../types";
 import { effortHint } from "./Log";
 import { isWarmupPreset } from "../../worker/warmup";
@@ -206,7 +206,7 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
   const idx = useRef(0);
   const endsAt = useRef(0);
   const pausedLeft = useRef<number | null>(null);
-  const completed = useRef(0);
+  const counted = useRef(new Set<number>()); // indexes of hangs that ran to the end
   const spent = useRef<number[]>([]); // seconds spent in each phase
   const startedAt = useRef(0);
   const lastBeep = useRef("");
@@ -224,7 +224,7 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
     if (!stoppedEarly) beeper.current.done();
     onFinish({
       preset,
-      completed: completed.current,
+      completed: counted.current.size,
       planned,
       elapsedSec: Math.round((performance.now() - startedAt.current) / 1000),
       activeSec: activeSeconds(phases, spent.current),
@@ -241,7 +241,7 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
 
   // Advance past the current phase. A hang only counts when it ran to the end, not when skipped.
   function advance(countHang: boolean, spentSec: number): boolean {
-    if (phases[idx.current].kind === "hang" && countHang) completed.current++;
+    if (phases[idx.current].kind === "hang" && countHang) counted.current.add(idx.current);
     spent.current[idx.current] = spentSec;
     idx.current++;
     if (idx.current >= phases.length) {
@@ -304,6 +304,24 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
     }
   }
 
+  // Back to the start of this phase, or of the previous one if this one has only just begun. Hangs that are
+  // run again stop counting until they finish again.
+  function rewind() {
+    const now = performance.now();
+    const left = pausedLeft.current ?? endsAt.current - now;
+    const elapsed = phases[idx.current].duration - left / 1000;
+    const target = rewindTarget(idx.current, elapsed);
+    idx.current = target;
+    spent.current.length = Math.min(spent.current.length, target);
+    for (const k of [...counted.current]) if (k >= target) counted.current.delete(k);
+    const ms = phases[target].duration * 1000;
+    if (pausedLeft.current !== null) pausedLeft.current = ms;
+    else endsAt.current = now + ms;
+    lastBeep.current = "";
+    startPhase(target);
+    setView((v) => ({ ...v, i: target, left: phases[target].duration }));
+  }
+
   const phase = phases[view.i];
   const next = phases[view.i + 1];
   const elapsedPlanned = phases.slice(0, view.i).reduce((a, p) => a + p.duration, 0) + (phase.duration - view.left);
@@ -333,6 +351,7 @@ function Runner({ preset, onFinish }: { preset: Preset; onFinish: (r: Result) =>
         >
           Stop
         </button>
+        <button onClick={rewind} aria-label="Rewind to the start of this or the previous section">Rewind</button>
         <button className="main" onClick={togglePause}>
           {view.paused ? "Resume" : "Pause"}
         </button>
