@@ -117,6 +117,28 @@ function AutoInfo({ auto, today }: { auto: AutoStart; today: string }) {
   );
 }
 
+// A routine that was started recently and hasn't finished, with a link to follow it.
+function Running({ auto }: { auto: AutoStart }) {
+  const running = auto.running ?? [];
+  if (running.length === 0) return null;
+  return (
+    <>
+      {running.map((r) => (
+        <p key={r.routine} className="small">
+          <span className="tag status skipped">running</span> {ROUTINE_LABEL[r.routine]}{" "}
+          {r.session_url ? (
+            <a href={r.session_url} target="_blank" rel="noreferrer">
+              Open the session
+            </a>
+          ) : (
+            "(check claude.ai/code for the session)"
+          )}
+        </p>
+      ))}
+    </>
+  );
+}
+
 export function CoachActivity() {
   const { data, error } = useApi<Activity>("/coach/runs?limit=100");
   const [shown, setShown] = useState(0);
@@ -140,6 +162,7 @@ export function CoachActivity() {
               <p className="muted small">The daily review runs about every {data.interval_hours} hours.</p>
             </>
           )}
+          {data.auto && <Running auto={data.auto} />}
           <RunNow />
           {runs.length > 0 &&
             (shown === 0 ? (

@@ -163,6 +163,7 @@ export interface AutoStart {
     created_at: string;
   } | null;
   missed?: { start_id: number; reason: "failed" | "no_run"; created_at: string } | null; // an automatic review that didn't complete
+  running?: { routine: "review" | "worker"; session_url: string | null; created_at: string }[]; // started recently, probably still going
 }
 
 export type FeedbackPriority = "P0" | "P1" | "P2";
