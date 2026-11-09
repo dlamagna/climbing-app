@@ -529,8 +529,23 @@ button {
   color: var(--text);
   text-decoration: none;
 }
-.menu a + a {
+.menu a + a,
+.menu a + .menu-btn {
   border-top: 1px solid var(--border);
+}
+.menu-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 14px;
+  background: none;
+  border: 0;
+  border-top: 1px solid var(--border);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .block-code {
