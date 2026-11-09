@@ -1,5 +1,6 @@
 import { PageHeader } from "../components/ui";
 import { coachInMore } from "../prefs";
+import { hardRefreshBrowser } from "../hardRefresh";
 
 const COACH_LINK = { href: "#/coach", title: "Coach", sub: "Notes, questions and reviews from Claude" };
 
@@ -23,6 +24,10 @@ export default function More() {
             <span className="muted small">{l.sub}</span>
           </a>
         ))}
+        <button type="button" className="menu-btn" onClick={() => void hardRefreshBrowser()}>
+          <strong>Hard refresh</strong>
+          <span className="muted small">Clear the cached app and load the latest version</span>
+        </button>
       </nav>
     </div>
   );
