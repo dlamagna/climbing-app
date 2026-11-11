@@ -171,6 +171,31 @@ export interface AutoStartStatus {
   worker: boolean; // the issue worker follows it
   last: RoutineStart | null; // the newest automatic start
   missed: { start_id: number; reason: "failed" | "no_run"; created_at: string } | null; // an automatic review that didn't complete (#94)
+  running: { routine: RoutineName; session_url: string | null; created_at: string }[]; // started recently and probably still going (#105)
+}
+
+// A routine counts as running for this long after it was started; there's no end signal for the worker.
+export const RUNNING_WINDOW_MIN = 45;
+
+// Routines started (automatically or by hand) within the window. A review stops counting once it has
+// recorded a run since its start.
+async function runningRoutines(db: D1Database, now: Date): Promise<AutoStartStatus["running"]> {
+  const { results } = await db
+    .prepare("SELECT routine, session_url, created_at FROM routine_starts WHERE status = 'started' ORDER BY id DESC LIMIT 10")
+    .all<{ routine: RoutineName; session_url: string | null; created_at: string }>();
+  const out: AutoStartStatus["running"] = [];
+  const seen = new Set<string>();
+  for (const r of results) {
+    if (seen.has(r.routine)) continue; // only the newest start of each
+    seen.add(r.routine);
+    if (minutesSince(r.created_at, now) > RUNNING_WINDOW_MIN) continue;
+    if (r.routine === "review") {
+      const run = await db.prepare("SELECT 1 AS done FROM coach_runs WHERE created_at >= ? LIMIT 1").bind(r.created_at).first();
+      if (run) continue;
+    }
+    out.push(r);
+  }
+  return out;
 }
 
 // The newest automatic review start, if it failed or never recorded a run, so the app can offer to run it
@@ -189,11 +214,12 @@ async function missedReview(db: D1Database, now: Date): Promise<AutoStartStatus[
 // For the Coach tab's coach activity.
 export async function autoStartStatus(env: Env, now = new Date()): Promise<AutoStartStatus> {
   const available = routinesAvailable(env);
-  const status: AutoStartStatus = { enabled: available.review, worker: available.review && available.worker, last: null, missed: null };
+  const status: AutoStartStatus = { enabled: available.review, worker: available.review && available.worker, last: null, missed: null, running: [] };
   if (!status.enabled) return status;
   status.last = await env.DB
     .prepare("SELECT * FROM routine_starts WHERE started_by = 'session' ORDER BY id DESC LIMIT 1")
     .first<RoutineStart>();
   status.missed = await missedReview(env.DB, now);
+  status.running = await runningRoutines(env.DB, now);
   return status;
 }

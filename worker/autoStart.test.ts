@@ -259,14 +259,39 @@ describe("workerIssueNumbers", () => {
 describe("autoStartStatus", () => {
   it("is off without the review's trigger", async () => {
     env = { ...env, COACH_REVIEW_FIRE_URL: undefined } as unknown as Env;
-    expect(await autoStartStatus(env)).toEqual({ enabled: false, worker: false, last: null, missed: null });
+    expect(await autoStartStatus(env)).toEqual({ enabled: false, worker: false, last: null, missed: null, running: [] });
   });
 
   it("shows the newest automatic start", async () => {
-    expect(await autoStartStatus(env)).toEqual({ enabled: true, worker: true, last: null, missed: null });
+    expect(await autoStartStatus(env)).toEqual({ enabled: true, worker: true, last: null, missed: null, running: [] });
     logSession("17:00");
     await write("17:00");
     expect((await autoStartStatus(env)).last).toMatchObject({ routine: "review", status: "started", session_url: "https://claude.ai/code/session_1" });
+  });
+
+  describe("running", () => {
+    it("lists a started review with its session link until it records a run", async () => {
+      logSession("17:00");
+      await write("17:00");
+      expect((await autoStartStatus(env, at("17:10"))).running).toEqual([
+        { routine: "review", session_url: "https://claude.ai/code/session_1", created_at: "2026-05-10T17:00:00Z" },
+      ]);
+      recordReview("17:20");
+      expect((await autoStartStatus(env, at("17:25"))).running).toEqual([]);
+    });
+
+    it("stops listing a start after the window", async () => {
+      logSession("17:00");
+      await write("17:00");
+      expect((await autoStartStatus(env, at("18:00"))).running).toEqual([]);
+    });
+
+    it("does not list failed starts", async () => {
+      status = 500;
+      logSession("17:00");
+      await write("17:00");
+      expect((await autoStartStatus(env, at("17:05"))).running).toEqual([]);
+    });
   });
 
   describe("missed review", () => {
