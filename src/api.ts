@@ -50,15 +50,25 @@ async function throwIfFailed(res: Response) {
 // the cache. Without it a save on a dead connection would spin forever and never be queued.
 export class TimeoutError extends TypeError {}
 export const REQUEST_TIMEOUT_MS = 20_000;
+// A read that already has an offline copy gives up sooner, so a hanging connection (gym wifi that only
+// half-works) shows the last synced data within a few seconds instead of a spinner.
+export const CACHED_READ_TIMEOUT_MS = 4_000;
 
 // Answers that mean the request didn't get through rather than that it was wrong (a gateway or the worker
 // briefly unavailable, rate limiting). Writes that get one are queued like offline writes and retried.
 const TRANSIENT_STATUS = [408, 429, 502, 503, 504];
 export const isTransient = (e: unknown) => e instanceof TypeError || (e instanceof HttpError && TRANSIENT_STATUS.includes(e.status));
 
-async function request<T>(method: string, path: string, body?: unknown, token = getToken(), key?: string): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  token = getToken(),
+  key?: string,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<T> {
   const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => abort.abort(), timeoutMs);
   try {
     const res = await fetch(`/api${path}`, {
       method,
@@ -97,12 +107,12 @@ export const sendNow = <T = unknown>(method: string, path: string, body?: unknow
 
 // Reads fall back to the last good response when offline (fetch throws TypeError on network failure).
 export async function get<T>(path: string): Promise<T> {
+  const cached = load<T | null>(CACHE_PREFIX + path, null);
   try {
-    const data = await request<T>("GET", path);
+    const data = await request<T>("GET", path, undefined, undefined, undefined, cached === null ? REQUEST_TIMEOUT_MS : CACHED_READ_TIMEOUT_MS);
     save(CACHE_PREFIX + path, data);
     return data;
   } catch (e) {
-    const cached = load<T | null>(CACHE_PREFIX + path, null);
     if (e instanceof TypeError && cached !== null) return cached;
     throw e;
   }
