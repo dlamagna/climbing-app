@@ -1,7 +1,7 @@
 // Saving writes (#82): a request that hangs times out and is queued, transient server errors are queued and
 // kept for retry, and writes the server rejects on replay are reported rather than dropped silently.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { HttpError, REQUEST_TIMEOUT_MS, TimeoutError, flushOutbox, isTransient, pendingCount, send } from "./api";
+import { CACHED_READ_TIMEOUT_MS, HttpError, REQUEST_TIMEOUT_MS, TimeoutError, flushOutbox, get, isTransient, pendingCount, send } from "./api";
 
 type Handler = (path: string, init: RequestInit) => Promise<Response>;
 let handler: Handler;
@@ -103,5 +103,29 @@ describe("flushOutbox", () => {
       JSON.parse(String(init.body)).a === 1 ? Response.json({ error: "date is required" }, { status: 400 }) : Response.json({ id: 2 });
     expect(await flushOutbox()).toEqual({ sent: 1, dropped: 1, error: "date is required" });
     expect(pendingCount()).toBe(0);
+  });
+});
+
+describe("get", () => {
+  it("shows the offline copy after a short wait when the connection hangs (#110)", async () => {
+    handler = ok({ name: "first" });
+    expect(await get("/profile")).toEqual({ name: "first" });
+    vi.useFakeTimers();
+    handler = hang;
+    const result = get("/profile");
+    await vi.advanceTimersByTimeAsync(CACHED_READ_TIMEOUT_MS);
+    expect(await result).toEqual({ name: "first" });
+  });
+
+  it("waits the full timeout when there is no offline copy", async () => {
+    vi.useFakeTimers();
+    handler = hang;
+    const result = get("/profile");
+    const settled = vi.fn();
+    result.then(settled, settled);
+    await vi.advanceTimersByTimeAsync(CACHED_READ_TIMEOUT_MS);
+    expect(settled).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS);
+    await expect(result).rejects.toBeInstanceOf(TimeoutError);
   });
 });
