@@ -15,6 +15,7 @@ import { annotateSchema } from "./schema-docs";
 import { GYM_MESSAGE, isGymInput } from "./gyms";
 import { parseGrade } from "./grades";
 import { OUTDOOR_TYPES, SESSION_TYPES, outdoorColumn, outdoorError } from "./sessions";
+import { parseParts, partsCheckType, partsTotal, splitSession } from "./sessionParts";
 import { TYPE_GROUPS } from "./typeGroups";
 import {
   FINGER_WEIGHT_MAX,
@@ -346,7 +347,7 @@ const TOOLS: Tool[] = [
   {
     name: "log_session",
     description:
-      "Log a completed training session. Load is computed as duration_min * rpe. Climbing sessions can be marked outdoor (default indoors). To fix one that is already logged use update_session.",
+      "Log a completed training session. Load is computed as duration_min * rpe. Climbing sessions can be marked outdoor (default indoors). A session that mixed types (e.g. boulder, board and lead) is logged with parts, the minutes per type, instead of type and duration_min: it is stored as one session per type sharing the date, rpe and gym (grade and notes on the first). To fix one that is already logged use update_session.",
     inputSchema: {
       type: "object",
       properties: {
@@ -374,11 +375,25 @@ const TOOLS: Tool[] = [
           type: "string",
           description: "Gym the session was at, when the climber says. Reuse the exact name from get_overview's gyms; a new name is fine for a new gym.",
         },
+        parts: {
+          type: "array",
+          minItems: 2,
+          items: {
+            type: "object",
+            properties: { type: { type: "string", enum: SESSION_TYPES }, duration_min: { type: "integer", minimum: 1 } },
+            required: ["type", "duration_min"],
+          },
+          description: "Only for a session that mixed types: minutes per type (2+ different types), replacing type and duration_min. Tags and outdoor apply to the climbing parts.",
+        },
       },
-      required: ["type", "duration_min", "rpe"],
+      required: ["rpe"],
     },
     run: async (a, env) => {
-      const error = tagsError(a.tags, a.type) ?? outdoorError(a.outdoor, a.type);
+      const parts = parseParts(a.parts);
+      if (parts && (a.type !== undefined || a.duration_min !== undefined)) throw new Error("pass either parts or type and duration_min, not both");
+      if (!parts && (a.type === undefined || a.duration_min === undefined)) throw new Error("type and duration_min are required (or parts)");
+      const checkType = parts ? partsCheckType(parts) : a.type;
+      const error = tagsError(a.tags, checkType) ?? outdoorError(a.outdoor, checkType);
       if (error) throw new Error(error);
       if (a.gym !== undefined && !isGymInput(a.gym)) throw new Error(GYM_MESSAGE);
       const s = {
@@ -388,7 +403,10 @@ const TOOLS: Tool[] = [
         gym: await resolveGym(env.DB, a.gym),
         date: await today(env, a.date),
       };
-      return { id: await insertSession(env.DB, s) };
+      if (!parts) return { id: await insertSession(env.DB, s) };
+      const ids: number[] = [];
+      for (const row of splitSession({ ...s, type: parts[0].type, duration_min: partsTotal(parts) }, parts)) ids.push(await insertSession(env.DB, row));
+      return { ids };
     },
   },
   {

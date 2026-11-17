@@ -6,10 +6,11 @@ import { GymPicker } from "../components/GymPicker";
 import { BenchmarkFields, useBenchmarkInputs } from "../components/plannedBenchmarks";
 import { NoteSuggestions } from "../components/noteSuggestions";
 import { TagPicker, takesTags } from "../components/TagPicker";
-import { Chips, DatePicker, Field, PageHeader, Stepper, range } from "../components/ui";
+import { Chips, DatePicker, Field, MultiChips, PageHeader, Stepper, range } from "../components/ui";
 import { localToday, presetLogDate } from "../dates";
+import { logParts, partMinutes } from "../logParts";
 import { type NoteSuggestions as Suggestions, noteSuggestions } from "../painWords";
-import { type Injury, type Readiness, SESSION_TYPES, type Session, type TodayView } from "../types";
+import { type Injury, type Readiness, SESSION_TYPES, type Session, type TodayView, typeLabel } from "../types";
 import { gradeHint, parseGrade } from "../../worker/grades";
 import { type KnownGym } from "../../worker/gyms";
 import { isHardSession } from "../../worker/readiness";
@@ -58,8 +59,21 @@ export default function Log() {
 
 function SessionForm({ session, presetDate }: { session: Session | null; presetDate: string | null }) {
   const [date, setDate] = useState(session?.date ?? presetDate ?? localToday());
-  const [type, setType] = useState<string | null>(session?.type ?? null);
-  const [duration, setDuration] = useState(session?.duration_min ?? 90);
+  // A new session can mix types (#108): with 2+ picked, minutes per type, saved as one session per type.
+  // An edit is always one session, so one type.
+  const [types, setTypes] = useState<string[]>(session?.type ? [session.type] : []);
+  const [minutes, setMinutes] = useState<Record<string, number>>({});
+  const type = types[0] ?? null;
+  const [singleDuration, setDuration] = useState(session?.duration_min ?? 90);
+  const parts = logParts(types, minutes);
+  const duration = parts ? parts.reduce((sum, p) => sum + p.duration_min, 0) : singleDuration;
+  // Tags, outdoor and the grade go with the climbing part of a mixed session.
+  const climbType = types.find(isClimbingType) ?? type;
+  function pickTypes(next: string[]) {
+    setTypes(next);
+    setMinutes(next.length > 1 ? partMinutes(next, minutes, duration) : {});
+    if (next.length === 1 && parts) setDuration(minutes[next[0]] ?? duration);
+  }
   const [rpe, setRpe] = useState<number | null>(session?.rpe ?? null);
   const [grade, setGrade] = useState(session?.max_grade ?? "");
   const [notes, setNotes] = useState(session?.notes ?? "");
@@ -81,7 +95,7 @@ function SessionForm({ session, presetDate }: { session: Session | null; presetD
   }, [gyms, gymTouched]);
   const ready = type !== null && rpe !== null && (!injury || injury.part !== null);
   // The grade in the other system of its discipline as you type (#60); the session type tells Font from French.
-  const parsedGrade = parseGrade(grade, type);
+  const parsedGrade = parseGrade(grade, climbType);
   const gradeHintText = parsedGrade && gradeHint(parsedGrade);
 
   // After saving, a note that mentions a tweak or a healed injury gets a one-tap follow-up instead of
@@ -104,11 +118,12 @@ function SessionForm({ session, presetDate }: { session: Session | null; presetD
         date,
         type,
         duration_min: duration,
+        ...(parts && { parts }),
         rpe,
         max_grade: grade.trim() || null,
         notes: notes.trim() || null,
-        tags: takesTags(type) ? tags : [], // kept while switching types, only sent for climbing ones
-        outdoor: isClimbingType(type) && outdoor, // same: non-climbing types are always indoors
+        tags: takesTags(climbType) ? tags : [], // kept while switching types, only sent for climbing ones
+        outdoor: isClimbingType(climbType) && outdoor, // same: non-climbing types are always indoors
         gym: gym.trim() || null,
         new_injury: injury && { ...draftBody(injury), link: linked },
         benchmarks: benchmarkBody(tests.inputs),
@@ -119,7 +134,7 @@ function SessionForm({ session, presetDate }: { session: Session | null; presetD
         afterSave(result, "#/history");
       } else {
         const result = await send("POST", "/sessions", body);
-        const what = injury ? "Session and injury logged" : "Session logged";
+        const what = `${parts ? `${parts.length} sessions` : "Session"}${injury ? " and injury" : ""} logged`;
         const note = readinessNote(todayView?.readiness, { date, duration_min: duration, rpe: rpe! }, localToday());
         if (note) toast(`${what}${isQueued(result) ? " offline" : ""}. ${note}`, undefined, 7000);
         else savedToast(result, what);
@@ -147,9 +162,13 @@ function SessionForm({ session, presetDate }: { session: Session | null; presetD
           <DatePicker value={date} onChange={setDate} />
         </Field>
         <Field label="What">
-          <Chips wrap options={SESSION_TYPES} value={type} onChange={setType} />
+          {session ? (
+            <Chips wrap options={SESSION_TYPES} value={type} onChange={(v) => pickTypes(v ? [v] : [])} />
+          ) : (
+            <MultiChips options={SESSION_TYPES} value={types} onChange={pickTypes} />
+          )}
         </Field>
-        {isClimbingType(type) && (
+        {isClimbingType(climbType) && (
           <Field label="Where">
             <Chips
               options={[
@@ -171,13 +190,31 @@ function SessionForm({ session, presetDate }: { session: Session | null; presetD
             }}
           />
         </Field>
-        {takesTags(type) && <TagPicker value={tags} onChange={setTags} />}
-        <Field label="How long">
-          <div className="row">
-            <Stepper value={duration} step={15} min={5} max={360} format={(v) => `${v} min`} onChange={setDuration} />
-            <Chips options={[45, 60, 90, 120].map((v) => ({ value: v, label: String(v) }))} value={duration} onChange={(v) => v && setDuration(v)} />
-          </div>
-        </Field>
+        {takesTags(climbType) && <TagPicker value={tags} onChange={setTags} />}
+        {parts ? (
+          <Field label="How long on each" hint={`${duration} min in total`}>
+            {parts.map((p) => (
+              <div className="row" key={p.type}>
+                <span>{typeLabel(p.type)}</span>
+                <Stepper
+                  value={p.duration_min}
+                  step={5}
+                  min={5}
+                  max={360}
+                  format={(v) => `${v} min`}
+                  onChange={(v) => setMinutes({ ...minutes, [p.type]: v })}
+                />
+              </div>
+            ))}
+          </Field>
+        ) : (
+          <Field label="How long">
+            <div className="row">
+              <Stepper value={duration} step={15} min={5} max={360} format={(v) => `${v} min`} onChange={setDuration} />
+              <Chips options={[45, 60, 90, 120].map((v) => ({ value: v, label: String(v) }))} value={duration} onChange={(v) => v && setDuration(v)} />
+            </div>
+          </Field>
+        )}
         <Field label="How hard overall" hint={effortHint(rpe)}>
           <Chips wrap options={range(1, 10).map((v) => ({ value: v, label: String(v) }))} value={rpe} onChange={setRpe} />
         </Field>

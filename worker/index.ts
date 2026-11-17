@@ -46,6 +46,7 @@ import { tagsColumn, tagsError } from "./tags";
 import { handleMcp } from "./mcp";
 import { GYM_MESSAGE, isGymInput } from "./gyms";
 import { deleteSession, outdoorColumn, outdoorError } from "./sessions";
+import { parseParts, partsCheckType, partsTotal, splitSession } from "./sessionParts";
 import { PLAN_STATUSES, isPlanStatus } from "./plan";
 import { deleteTimerSession, insertTimerLog, markSessionWarmup, setTimerSessionRpe, setTimerWarmup } from "./timerLog";
 import { isRpe } from "./timerSession";
@@ -71,13 +72,20 @@ const clientId = (c: C) => c.req.header("Idempotency-Key") || null;
 
 async function sessionBody(c: C) {
   const s = await c.req.json();
+  // A mixed session (#108): parts gives the type and minutes, stored as one session per type.
+  s.parts = badRequestOn(() => parseParts(s.parts));
+  if (s.parts) {
+    s.type = s.parts[0].type;
+    s.duration_min = partsTotal(s.parts);
+  }
   if (!isDate(s.date) || !s.type || !(s.duration_min > 0) || !(s.rpe >= 1 && s.rpe <= 10)) {
     throw new BadRequest("date, type, duration_min and rpe (1-10) are required");
   }
   if (s.plan_id != null && !Number.isInteger(s.plan_id)) throw new BadRequest("plan_id must be an integer");
-  const tagError = tagsError(s.tags, s.type);
+  const checkType = s.parts ? partsCheckType(s.parts) : s.type;
+  const tagError = tagsError(s.tags, checkType);
   if (tagError) throw new BadRequest(tagError);
-  const outError = outdoorError(s.outdoor, s.type);
+  const outError = outdoorError(s.outdoor, checkType);
   if (outError) throw new BadRequest(outError);
   if (s.gym !== undefined && !isGymInput(s.gym)) throw new BadRequest(GYM_MESSAGE);
   if (s.new_injury) parseNewInjury(s.new_injury);
@@ -212,12 +220,17 @@ api.delete("/checkins/:date", async (c) => {
   return c.json({ ok: true });
 });
 
+// With parts (#108) one session per type; the first one carries the benchmarks and a quick-added injury.
 api.post("/sessions", async (c) => {
   const s = await sessionBody(c);
-  const id = await insertSession(c.env.DB, s, clientId(c));
+  const key = clientId(c);
+  const rows = s.parts ? splitSession(s, s.parts) : [s];
+  const ids: number[] = [];
+  for (const [n, row] of rows.entries()) ids.push(await insertSession(c.env.DB, row, key && (n ? `${key}:part${n}` : key)));
+  const id = ids[0];
   await sessionBenchmarks(c, s, id);
   await sessionInjury(c, s, id);
-  return c.json({ id });
+  return c.json(s.parts ? { id, ids } : { id });
 });
 
 // With the benchmark results entered with it, so editing shows them.
@@ -232,6 +245,7 @@ api.get("/sessions/:id", async (c) => {
 api.put("/sessions/:id", async (c) => {
   const id = Number(c.req.param("id"));
   const s = await sessionBody(c);
+  if (s.parts) throw new BadRequest("parts is only for logging a new session; edit each type's session on its own");
   if (!(await updateSession(c.env.DB, id, s))) return c.json({ error: "Session not found" }, 404);
   await sessionBenchmarks(c, s, id);
   await sessionInjury(c, s, id);
